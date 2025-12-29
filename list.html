@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>링크 목록 - Smart Link Extractor</title>
+    <link rel="stylesheet" href="list.css">
+</head>
+
+<body>
+    <div class="list-container">
+        <header class="list-header">
+            <div class="header-left">
+                <button id="delete-btn" class="btn outline-btn">🗑️ 삭제</button>
+            </div>
+            <div class="header-center">
+                <h1>추출된 링크 목록</h1>
+            </div>
+            <div class="header-right">
+                <div class="view-controls">
+                    <button id="table-view-btn" class="view-btn active" title="목록 보기">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                    </button>
+                    <button id="card-view-btn" class="view-btn" title="카드 보기">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                    </button>
+                </div>
+                <button id="excel-btn" class="btn primary-btn">📥 엑셀 다운로드</button>
+            </div>
+        </header>
+
+        <main class="list-main">
+            <div id="table-container">
+                <table class="link-table">
+                    <thead>
+                        <tr>
+                            <th class="col-check">
+                                <input type="checkbox" id="select-all">
+                            </th>
+                            <th class="col-title">아이콘 + 제목</th>
+                            <th class="col-url">URL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="link-body">
+                        <!-- Data will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="card-container" class="hidden">
+                <div class="card-grid" id="card-grid">
+                    <!-- Cards will be injected here -->
+                </div>
+            </div>
+            <div id="empty-state" class="empty-state hidden">
+                <p>추출된 링크가 없습니다.</p>
+            </div>
+        </main>
+    </div>
+    <div id="toast" class="toast">
+        <span class="toast-icon">✅</span>
+        <span id="toast-message">삭제되었습니다.</span>
+    </div>
+    <script src="list.js"></script>
+</body>
+
+</html>

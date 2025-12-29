@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vscode/
+test-results/
+*.txt
+*.log
+*.sdocx
+.gemini/
+.agent/
+.system_generated/

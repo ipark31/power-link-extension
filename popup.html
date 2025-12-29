@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Link Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        <span>Smart Link Extractor</span>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="config-section">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">추출 내용</span>
+          </div>
+          <div class="card-body">
+            <div class="radio-group" id="mode-group">
+              <label class="radio-item">
+                <input type="radio" name="mode" value="full" checked>
+                <span class="radio-label">썸네일 + 제목 + URL</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="mode" value="url">
+                <span class="radio-label">URL만</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">추출범위</span>
+          </div>
+          <div class="card-body">
+            <div class="radio-group" id="scope-group">
+              <label class="radio-item">
+                <input type="radio" name="scope" value="current" checked>
+                <span class="radio-label">현재 탭</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="scope" value="tabs">
+                <span class="radio-label">현재 창의 모든 탭</span>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="scope" value="all">
+                <span class="radio-label">모든 창의 모든 탭</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tabs-section" class="tabs-section hidden">
+        <div class="card">
+          <div class="card-header">
+            <div class="flex-between">
+              <span class="card-title">탭 목록</span>
+              <label class="checkbox-container">
+                <input type="checkbox" id="select-all-tabs" checked>
+                <span class="checkmark"></span>
+                <span class="label-text">전체 선택</span>
+              </label>
+            </div>
+          </div>
+          <div id="tab-list" class="tab-list">
+            <!-- Tab items will be injected here -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <button id="extract-btn" class="primary-btn">📋 클립보드 복사</button>
+      <button id="view-list-btn" class="primary-btn">📄 링크 목록</button>
+    </footer>
+  </div>
+  <div id="toast" class="toast">
+    <span class="toast-icon">✅</span>
+    <span id="toast-message">클립보드에 복사되었습니다.</span>
+  </div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
