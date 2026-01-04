@@ -1,6 +1,6 @@
-// Service worker for Smart Link Extractor
+// Service worker for Power Link
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('Smart Link Extractor installed.');
+    console.log('Power Link installed.');
 });
 
 // Currently, orchestration is handled in popup.js.
