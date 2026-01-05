@@ -8,3 +8,6 @@ test-results/
 .gemini/
 .agent/
 .system_generated/
+
+# Build output
+# Build command: Remove-Item -Path "dist" -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Path "dist" -Force | Out-Null; Copy-Item -Path "manifest.json" -Destination "dist\" -Force; Copy-Item -Path "src" -Destination "dist\src" -Recurse -Force; Copy-Item -Path "icons" -Destination "dist\icons" -Recurse -Force; Write-Host "Build completed successfully"

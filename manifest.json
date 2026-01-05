@@ -3,12 +3,12 @@
   "name": "Power Link",
   "version": "1.0.0",
   "description": "Extract links as cards for Samsung Notes, Word, and Excel.",
+  "author": "ipark31",
   "permissions": [
     "tabs",
     "storage",
     "scripting",
-    "bookmarks",
-    "identity"
+    "bookmarks"
   ],
   "host_permissions": [
     "<all_urls>"
