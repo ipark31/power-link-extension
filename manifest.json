@@ -5,11 +5,8 @@
   "description": "Extract links as cards for Samsung Notes, Word, and Excel.",
   "permissions": [
     "tabs",
-    "activeTab",
-    "scripting",
     "storage",
-    "nativeMessaging",
-    "clipboardWrite",
+    "scripting",
     "bookmarks",
     "identity"
   ],

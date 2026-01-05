@@ -1,0 +1,11 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="26" fill="#FF4B4B"/>
+  
+  <g stroke="white" stroke-width="8" stroke-linecap="round">
+    <path d="M75 35L85 45C92 52 92 63 85 70L75 80" stroke-width="10"/>
+    <path d="M53 48L43 58C36 65 36 76 43 83L53 93" stroke-width="10"/>
+    <path d="M55 73L73 55" stroke-width="10"/>
+  </g>
+  
+  <text x="64" y="112" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">POWER LINK</text>
+</svg>

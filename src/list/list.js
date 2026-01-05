@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const emptyState = document.getElementById('empty-state');
     const selectAll = document.getElementById('select-all');
     const deleteBtn = document.getElementById('delete-btn');
+    const openNewWindowBtn = document.getElementById('open-new-window-btn');
     const excelBtn = document.getElementById('excel-btn');
     const sortDomainBtn = document.getElementById('sort-domain-btn');
     const toast = document.getElementById('toast');
@@ -135,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td class="col-actions">
                     <div class="actions-cell">
                         <button class="bookmark-btn" data-title="${item.title}" data-url="${item.url}">북마크</button>
-                        <button class="row-close-btn" data-id="${item.id}" data-tab-id="${item.tabId}" title="해당 탭 닫기">✕</button>
+                        <button class="row-close-btn" data-id="${item.id}" data-tab-id="${item.tabId}" title="해당 탭 닫기">닫기</button>
                     </div>
                 </td>
             `;
@@ -258,6 +259,50 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (err) {
             console.error('Power Link: Delete failed:', err);
             showToast('삭제 중 오류가 발생했습니다.', '❌');
+        }
+    });
+
+    // 별도 창으로 열기 기능
+    openNewWindowBtn.addEventListener('click', async () => {
+        const selectedIds = Array.from(document.querySelectorAll('.row-checkbox:checked'))
+            .map(cb => cb.value);
+
+        if (selectedIds.length === 0) {
+            showToast('열 항목을 선택해 주세요.', '⚠️');
+            return;
+        }
+
+        try {
+            // 선택된 항목들의 tabId 추출
+            const selectedTabIds = savedLinks
+                .filter(item => selectedIds.includes(item.id))
+                .map(item => parseInt(item.tabId))
+                .filter(tabId => !isNaN(tabId));
+
+            if (selectedTabIds.length === 0) {
+                showToast('열 수 있는 탭이 없습니다.', '⚠️');
+                return;
+            }
+
+            // 새 창 생성 및 탭 이동
+            const newWindow = await chrome.windows.create({ focused: true });
+            const firstTabInNewWin = newWindow.tabs[0];
+            await chrome.tabs.move(selectedTabIds, { windowId: newWindow.id, index: -1 });
+            if (firstTabInNewWin) await chrome.tabs.remove(firstTabInNewWin.id);
+
+            // 데이터 업데이트
+            savedLinks.forEach(link => {
+                if (selectedIds.includes(link.id)) {
+                    link.windowId = newWindow.id;
+                }
+            });
+            await chrome.storage.local.set({ savedLinks });
+            selectAll.checked = false;
+            renderLinks();
+            showToast(`${selectedTabIds.length}개의 탭을 새 창으로 이동했습니다. 🚀`);
+        } catch (err) {
+            console.error('Power Link: Open new window failed:', err);
+            showToast('창 열기 중 오류가 발생했습니다.', '❌');
         }
     });
 
