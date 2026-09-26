@@ -2,14 +2,17 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>Power Link</title>
+  <title>Power Link 설정</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../ui/pl.css">
   <style>html, body { margin: 0; }</style>
 </head>
 <body>
-  <div class="pl-app pl-popup" id="app"></div>
-  <script type="module" src="popup.js"></script>
+  <div class="pl-app pl-options pl-options--page" id="app"></div>
+  <script src="demo-flag.js"></script>
+  <script src="../shared/classify.js"></script>
+  <script src="../core/content.js"></script>
+  <script type="module" src="options.js"></script>
 </body>
 </html>

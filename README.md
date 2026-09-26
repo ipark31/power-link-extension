@@ -1,45 +1,78 @@
-# Power Link (파워 링크)
+# Power Link
 
-웹 페이지의 링크 정보를 아름다운 카드 형태로 추출하여 삼성 노트, MS Word, Excel, Markdown 등에 쉽게 붙여넣을 수 있게 도와주는 크롬 확장 프로그램입니다.
+드래그 한 번으로 링크를 모으고, 유튜브·틱톡·인스타그램·X·블로그 링크를 카드·표로 정리하는 크리에이터용 크롬 확장 프로그램입니다.
 
-## 주요 기능
+현재 버전: **2.0.0** · 변경 내역은 [CHANGELOG.md](CHANGELOG.md)
 
-- **토스트 메시지 알림**: 클립보드 복사, 탭 닫기, 북마크 등록 시 직관적인 알림 제공.
-- **링크 목록 관리**: 추출한 링크들을 목록 형태로 관리하고, 원치 않는 항목 삭제 가능.
-- **창닫기 기능**: 목록에서 선택한 페이지의 브라우저 탭을 원클릭으로 닫기.
-- **북마크 등록**: 추출된 URL을 브라우저 북마크에 즉시 등록.
-- **데이터 내보내기**: 수집된 링크 목록을 엑셀(XLS) 파일로 다운로드 가능.
-- **프리미엄 UI/UX**: 세계 최고 수준의 에이전시 스타일 디자인 적용 (라이트 테마 최적화).
+## 설치
 
-## 설치 방법
+### 방법 1. 릴리스 zip으로 설치
+1. [Releases](https://github.com/ipark31/power-link-extension/releases)에서 `power-link-v2.0.0.zip`을 받아 압축을 풉니다.
+2. 크롬 주소창에 `chrome://extensions` 입력 → 오른쪽 위 **개발자 모드** 켜기
+3. **압축해제된 확장 프로그램을 로드합니다** → 압축을 푼 폴더 선택
 
-1. `chrome://extensions/` 페이지로 이동합니다.
-2. 우측 상단의 **개발자 모드**를 활성화합니다.
-3. **압축해제된 확장 프로그램을 로드합니다** 버튼을 클릭합니다.
-4. 본 프로젝트 폴더(`c:\GitHub\power-link-extension`)를 선택합니다.
+### 방법 2. 저장소 폴더를 바로 로드 (개발용)
+위 2~3번에서 저장소 폴더(`manifest.json`이 있는 폴더)를 선택합니다.
+코드를 바꾼 뒤에는 `chrome://extensions`에서 Power Link의 **새로고침(⟳)** 버튼을 누릅니다.
 
-## 사용 방법
+> 설치 전부터 열려 있던 탭은 한 번 새로고침해야 마우스 수집이 동작합니다.
 
-1. 추출하고 싶은 페이지들이 열려 있는 상태에서 브라우저 우측 상단의 확장 프로그램 아이콘을 클릭합니다.
-2. 추출 방식(풀 카드 vs URL)을 선택합니다.
-3. 추출 범위(현재 페이지 vs 열린 탭)를 선택합니다.
-4. **클립보드 복사** 버튼을 누르면 토스트 알림과 함께 카드 형태의 데이터가 복사됩니다.
-5. **링크 목록** 버튼을 누르면 지금까지 추출한 링크들을 표 형태로 확인하고 관리(삭제 및 엑셀 다운로드)할 수 있습니다.
-6. 대상 애플리케이션(삼성 노트, Word, Excel, Markdown 에디터 등)에 Ctrl+V로 붙여넣습니다.
+## 사용법
 
-## 기술 스택
+| 동작 | 기본 단축키 |
+|---|---|
+| 박스로 선택해서 **복사** | Ctrl + 우클릭 드래그 |
+| 박스로 선택해서 **새 탭으로 열기** | Shift + 우클릭 드래그 |
+| 자유도형으로 둘러서 **목록에 저장** | Alt + 우클릭 드래그 |
+| 드래그 취소 | Esc |
+| 수집 링크 사이드바 열기 | Alt + Shift + L (또는 팝업의 ‘수집 링크’) |
 
-- Manifest V3
-- Vanilla JS, HTML, CSS (Docker Desktop UI 컨셉)
-- Chrome Scripting & Tabs API
-- Clipboard API (Multi-mime types support)
+- 수정 키 없이 드래그하면 아무 동작도 하지 않습니다.
+- 단축키·선택 방식·동작·색상은 **설정 › 수집 규칙**에서 바꿀 수 있고, 같은 화면의 연습 영역에서 바로 시험해 볼 수 있습니다.
+- 유튜브 상세 정보(조회수·구독자·롱폼/숏폼 수 등)는 **설정 › API · 연동**에 YouTube Data API v3 키를 넣으면 수집됩니다. 키는 이 컴퓨터에만 저장됩니다.
 
-## 디버깅 가이드 (VS Code)
+## 폴더 구조
 
-본 프로젝트에는 VS Code에서 바로 확장을 디버깅할 수 있는 설정이 포함되어 있습니다.
+| 경로 | 역할 |
+|---|---|
+| `manifest.json` | 확장 설정 (버전은 여기서 관리) |
+| `src/core/background.js` | 서비스 워커: 수집 동작, 탭 관리, API, 워치리스트 |
+| `src/core/content.js` | 웹페이지 위 드래그 수집 엔진 (박스·자유도형) |
+| `src/shared/` | 분류기(`classify.js`), 저장소, 형식 변환, YouTube API, 상수 |
+| `src/popup/` · `src/sidepanel/` · `src/options/` | 팝업 · 사이드바 · 설정 화면 |
+| `src/offscreen/` | 클립보드 쓰기용 오프스크린 문서 |
+| `src/ui/pl.css` | 디자인 시스템 (토큰 → 컴포넌트 → 유틸리티) |
+| `src/ui/ui.js` | 아이콘·토스트·클립보드 공통 함수 |
+| `scripts/build.sh`, `scripts/build.ps1` | `dist/`와 설치용 zip 생성 |
 
-1. VS Code의 **Run and Debug** 탭(Ctrl+Shift+D)으로 이동합니다.
-2. 상단 드롭다운에서 **Launch Chrome with Extension**을 선택하고 F5를 누릅니다.
-3. 새로운 크롬 창이 열리며 해당 확장이 자동으로 로드됩니다.
-4. `popup.js`, `background.js` 등에 중단점(Breakpoint)을 설정하여 디버깅할 수 있습니다.
-5. 팝업 UI를 수정 중이라면, 크롬 개발자 도구(F12)를 통해 요소 검사 및 콘솔 로그 확인이 가능합니다.
+## 새 버전 배포
+
+1. `manifest.json`의 `version`을 올립니다 (예: `2.0.1`).
+2. `CHANGELOG.md` 맨 위에 `## [2.0.1] - 날짜` 항목을 적습니다.
+3. 커밋한 뒤 태그를 만들어 올립니다.
+   ```bash
+   git tag -a v2.0.1 -m "Power Link 2.0.1"
+   git push origin master --follow-tags
+   ```
+4. GitHub Actions가 zip을 만들고 [Releases](https://github.com/ipark31/power-link-extension/releases)에 올립니다. (태그와 manifest 버전이 다르면 실패하도록 막아 두었습니다.)
+
+로컬에서 zip만 만들 때: `bash scripts/build.sh` 또는 PowerShell에서 `scripts\build.ps1`
+
+## 이전 버전으로 되돌리기
+
+1.x는 태그 `v1.0.0`과 브랜치 `backup/v1.0.0`으로 보존되어 있습니다.
+
+```bash
+# 1.x 코드만 잠깐 보기/설치하기
+git checkout v1.0.0            # 확인 후 돌아오기: git checkout master
+
+# master 자체를 1.x로 되돌리기 (새 커밋으로 기록되어 2.0도 다시 살릴 수 있음)
+git revert --no-edit v1.0.0..master
+```
+
+## 디자인 시스템 규칙
+
+- 색·간격·글자 크기는 `src/ui/pl.css`의 토큰(`--pl-*`)만 사용합니다.
+- 선택 상태는 `aria-pressed` / `aria-selected` / `aria-current`, 그 밖의 상태는 `.is-on` · `.is-selected`로 표시합니다.
+- 의미 색은 `data-tone`, 점수 구간은 `data-level`로 지정합니다.
+- 툴팁은 `data-tip="텍스트"`만 붙이면 됩니다.

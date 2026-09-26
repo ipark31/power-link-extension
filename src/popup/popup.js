@@ -1,447 +1,148 @@
-/* =========================
-   Global Variables & Init
-========================== */
-let toast, toastMsg;
+// Power Link — popup
+import { getSettings, setSettings, getLinks, getApiKey } from '../shared/storage.js';
+import { ACTIONS, MODIFIERS } from '../shared/constants.js';
+import { esc } from '../shared/util.js';
+import { icon, version, send, toast, writeClipboard } from '../ui/ui.js';
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Check if Chrome Extension API is available
-  if (!chrome || !chrome.tabs || !chrome.storage) {
-    const container = document.querySelector('.app-container');
-    if (container) {
-      container.innerHTML = `
-        <div style="padding: 40px; text-align: center;">
-          <h2 style="color: #d93025; margin-bottom: 16px;">⚠️ 확장 프로그램 오류</h2>
-          <p style="color: #5f6368; line-height: 1.6;">
-            이 페이지는 Chrome 확장 프로그램으로 실행되어야 합니다.<br>
-            <strong>chrome://extensions/</strong>에서 확장 프로그램을 로드한 후,<br>
-            확장 프로그램 아이콘을 클릭하여 사용하세요.
-          </p>
+const app = document.getElementById('app');
+let settings, linkCount = 0, hasKey = false, tabCount = 0, busy = false;
+
+const PLATS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그']];
+const PLAT_NAME = { yt: '유튜브', tt: '틱톡', ig: '인스타그램', x: 'X', blog: '블로그' };
+const KINDS = [['post', '게시물·영상'], ['account', '채널·계정'], ['all', '모든 링크']];
+const SCOPES = [['current', '현재 탭'], ['window', '현재 창'], ['all', '모든 창']];
+const CONTENT = [['link', '링크만'], ['title', '링크+제목'], ['detail', '상세 정보']];
+const CONTENT_HINT = { link: '주소만 모아요', title: '제목 함께', detail: '항목은 설정에서' };
+const AFTER = [['keep', '그대로'], ['close', '탭 닫기'], ['move', '새 창으로']];
+const SORT = [['none', '안 함'], ['domain', '도메인별 창'], ['one', '한 창으로']];
+const SHAPE = { box: '박스', lasso: '자유도형' };
+
+const seg = (list, cur, key) => `<div class="pl-seg pl-seg--grow">${list.map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${cur === id}" data-set="${key}" data-val="${id}">${l}</button>`).join('')}</div>`;
+
+function summary(p) {
+  const scope = { current: '현재 탭', window: '현재 창의 모든 탭', all: '모든 창의 모든 탭' }[p.scope];
+  if (!p.kinds.length) return '수집할 대상을 하나 이상 골라 주세요';
+  if (p.kinds.includes('all')) return `${scope}에서 ${p.plats.includes('all') ? '' : p.plats.map((x) => PLAT_NAME[x]).join('·') + ' '}모든 링크를 모아요`;
+  const plat = p.plats.includes('all') ? '' : p.plats.map((x) => PLAT_NAME[x]).join('·') + ' ';
+  const kinds = p.kinds.map((k) => (k === 'post' ? '게시물·영상' : '채널·계정')).join('·');
+  return `${scope}에서 ${plat}${kinds} 링크를 모아요`;
+}
+
+function render() {
+  const p = settings.popup;
+  const rules = settings.rules.filter((r) => r.enabled !== false);
+  app.innerHTML = `
+  <header class="pl-popup__header">
+    <span class="pl-brand"><span class="pl-brand__mark">${icon('link')}</span>Power Link</span>
+    <span class="pl-u-grow"></span>
+    <button type="button" class="pl-btn pl-btn--soft pl-btn--sm" id="openPanel">${icon('sidebar', 'pl-i--sm')}수집 링크 <b class="pl-u-mono pl-u-accent">${linkCount}</b></button>
+    <button type="button" class="pl-icon-btn" id="openOptions" aria-label="설정" data-tip="설정" data-tip-align="end" data-tip-pos="below">${icon('sliders')}</button>
+  </header>
+  <main class="pl-popup__main">
+    <section class="pl-card pl-card--pad pl-card--stack">
+      <div class="pl-head"><span class="pl-step">1</span><h2 class="pl-title-xs">수집 방법</h2></div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;">
+        <button type="button" class="pl-choice pl-choice--xl" aria-pressed="${p.method === 'window'}" data-set="method" data-val="window">${icon('window')}창에서 링크 추출</button>
+        <button type="button" class="pl-choice pl-choice--xl" aria-pressed="${p.method === 'mouse'}" data-set="method" data-val="mouse">${icon('mouse')}마우스로 링크 추출</button>
+      </div>
+      ${p.method === 'window' ? `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="pl-field-row"><span class="pl-label">범위</span>${seg(SCOPES, p.scope, 'scope')}</div>
+        <div class="pl-field-row"><span class="pl-label">플랫폼</span><div class="pl-u-grow" style="display:flex;gap:3px;">
+          ${PLATS.map(([id, l]) => `<button type="button" class="pl-choice pl-choice--compact pl-choice--flex" aria-pressed="${p.plats.includes(id)}" data-plat="${id}"><span class="pl-dot pl-dot--sm" data-tone="${id === 'all' ? 'none' : id}"></span>${l}</button>`).join('')}
+        </div></div>
+        <div class="pl-field-row"><span class="pl-label">대상</span><div class="pl-u-grow" style="display:flex;gap:6px;">
+          ${KINDS.map(([id, l]) => `<button type="button" class="pl-choice pl-choice--flex" aria-pressed="${p.kinds.includes(id)}" data-kind="${id}"><span class="pl-check"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span>${l}</button>`).join('')}
+        </div></div>
+        <div class="pl-note">${icon('info', 'pl-i--sm')}<span>${esc(summary(p))}</span></div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="pl-btn pl-btn--primary pl-btn--lg pl-btn--flex" id="doCopy" ${p.kinds.length ? '' : 'disabled'}>${icon('copy')}수집해서 복사</button>
+          <button type="button" class="pl-btn pl-btn--lg pl-btn--flex" id="doSave" ${p.kinds.length ? '' : 'disabled'}>${icon('plus')}목록에 저장</button>
         </div>
-      `;
-    }
+      </div>` : `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="pl-card pl-card--clip" style="border-radius:10px;">
+          ${rules.length ? rules.map((r) => `
+          <div style="height:34px;padding:0 10px;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--pl-text-2);border-bottom:1px solid var(--pl-divider);">
+            <span class="pl-dot" style="background:${esc(r.color)}"></span>
+            ${r.mod !== 'none' ? `<span class="pl-kbd">${MODIFIERS[r.mod]}</span><span class="pl-kbd-plus">+</span>` : ''}
+            <span class="pl-kbd">${r.button === 'left' ? '좌클릭' : '우클릭'} 드래그</span>
+            <span class="pl-u-muted" style="font-size:11px;">${SHAPE[r.shape]}</span>
+            <span class="pl-u-push pl-u-strong">${ACTIONS[r.action]?.label || ''}</span>
+          </div>`).join('') : '<div class="pl-caption" style="padding:12px;">켜진 규칙이 없어요</div>'}
+        </div>
+        <div class="pl-head"><span class="pl-caption">페이지에서 바로 드래그하세요. Esc로 취소.</span><button type="button" class="pl-text-link pl-u-push" id="editRules" style="border:0;background:none;cursor:pointer;">단축키 변경</button></div>
+        <div class="pl-caption">설치 전부터 열려 있던 탭은 한 번 새로고침해야 마우스 수집이 동작해요.</div>
+      </div>`}
+    </section>
+    <section class="pl-card pl-card--pad pl-card--stack">
+      <div class="pl-head"><span class="pl-step">2</span><h2 class="pl-title-xs">수집 내용</h2><span class="pl-head__aside">${CONTENT_HINT[settings.collect]}</span></div>
+      <div class="pl-seg pl-seg--lg">${CONTENT.map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${settings.collect === id}" data-collect="${id}">${l}</button>`).join('')}</div>
+    </section>
+    <section class="pl-card pl-card--pad pl-card--stack" style="--pl-label-w:64px;gap:9px;">
+      <div class="pl-head"><span class="pl-step">3</span><h2 class="pl-title-xs">탭 관리</h2><span class="pl-head__aside">열린 탭 ${tabCount}개</span></div>
+      <div class="pl-field-row"><span class="pl-label">수집 후</span>${seg(AFTER, p.after, 'after')}</div>
+      <div class="pl-field-row"><span class="pl-label">탭 정렬</span>${seg(SORT, p.sort, 'sort')}</div>
+    </section>
+  </main>
+  <footer class="pl-popup__footer">
+    <span class="pl-dot pl-dot--xs" ${hasKey ? 'data-tone="success"' : ''}></span>${hasKey ? 'YouTube API 연결됨' : 'YouTube API 미설정'}
+    <span class="pl-u-push pl-u-faint pl-u-mono" title="Power Link 버전">v${version()}</span>
+  </footer>`;
+}
+
+async function savePopup(patch) {
+  settings.popup = Object.assign({}, settings.popup, patch);
+  render();
+  await setSettings({ popup: settings.popup });
+}
+
+app.addEventListener('click', async (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.dataset.set) return savePopup({ [t.dataset.set]: t.dataset.val });
+  if (t.dataset.collect) { settings.collect = t.dataset.collect; render(); return setSettings({ collect: settings.collect }); }
+  if (t.dataset.plat) {
+    const id = t.dataset.plat;
+    let plats = settings.popup.plats.filter((x) => x !== 'all');
+    if (id === 'all') plats = ['all'];
+    else plats = plats.includes(id) ? plats.filter((x) => x !== id) : plats.concat(id);
+    return savePopup({ plats: plats.length ? plats : ['all'] });
+  }
+  if (t.dataset.kind) {
+    const id = t.dataset.kind;
+    let kinds = settings.popup.kinds;
+    if (id === 'all') kinds = kinds.includes('all') ? [] : ['all'];
+    else { kinds = kinds.filter((x) => x !== 'all'); kinds = kinds.includes(id) ? kinds.filter((x) => x !== id) : kinds.concat(id); }
+    return savePopup({ kinds });
+  }
+  if (t.id === 'openPanel') {
+    const win = await chrome.windows.getCurrent();
+    try { await chrome.sidePanel.open({ windowId: win.id }); window.close(); } catch (err) { toast('사이드바를 열 수 없어요: ' + err.message, 'error'); }
     return;
   }
-
-  const tabsSection = document.getElementById('tabs-section');
-  const tabList = document.getElementById('tab-list');
-  const selectAllTabs = document.getElementById('select-all-tabs');
-  const extractBtn = document.getElementById('extract-btn');
-  const viewListBtn = document.getElementById('view-list-btn');
-
-  toast = document.getElementById('toast');
-  toastMsg = document.getElementById('toast-message');
-
-  /* =========================
-     Radio Button Change Events
-  ========================== */
-  document.querySelectorAll('input[name="scope"]').forEach(radio => {
-    radio.addEventListener('change', async (e) => {
-      const scopeValue = e.target.value;
-      if (scopeValue === 'tabs' || scopeValue === 'all') {
-        tabsSection.classList.remove('hidden');
-        await loadTabs(tabList, scopeValue);
-      } else {
-        tabsSection.classList.add('hidden');
-      }
-    });
-  });
-
-  selectAllTabs.addEventListener('change', () => {
-    document.querySelectorAll('.tab-checkbox')
-      .forEach(cb => cb.checked = selectAllTabs.checked);
-  });
-
-  /* =========================
-     Core Logic: Extraction
-  ========================== */
-  async function performExtraction() {
-    const scopeValue = document.querySelector('input[name="scope"]:checked').value;
-    const modeValue = document.querySelector('input[name="mode"]:checked').value;
-
-    const targetTabs = await getTargetTabs(scopeValue);
-    if (!targetTabs.length) {
-      alert('탭을 선택해 주세요.');
-      return null;
-    }
-
-    // 병렬 처리를 위해 Promise 배열 생성
-    const extractionPromises = targetTabs.map(async (tab) => {
-      const tabId = tab.id;
-      const url = tab.url || '';
-      const domain = new URL(url).hostname;
-      let title = tab.title || '제목 없음';
-
-      // [추가] 타이틀 정규화 (유튜브 알림 숫자 제거: (4) 제목 -> 제목)
-      title = title.replace(/^\(\d+\)\s*/, '');
-
-      const favIconUrl = tab.favIconUrl || '';
-
-      // 기본 데이터 (Fallback용)
-      let result = {
-        title,
-        url,
-        domain,
-        thumbnail: modeValue === 'full' ? favIconUrl : null,
-        tabId,
-        windowId: tab.windowId
-      };
-
-      // YouTube 최적화 (스크립트 실행 없이 썸네일 및 기본 채널명 생성)
-      if (domain.includes('youtube.com')) {
-        const urlObj = new URL(url);
-        const videoId = urlObj.searchParams.get('v');
-        if (videoId && modeValue === 'full') {
-          result.thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-        }
-
-        // [추가] 스택트립트 실행 실패 시를 대비한 기본 채널명 파싱
-        if (urlObj.pathname.includes('/@')) {
-          result.channel = urlObj.pathname.split('/')[1]; // @handle
-        }
-
-        // 타이틀에서 채널명 추출 시도 (예: "Title - YouTube")
-        if (title.includes(' - YouTube')) {
-          const parts = title.split(' - YouTube')[0].trim();
-          // 만약 타이틀이 "Video / Channel" 형태라면? 유튜브는 보통 "Video Title - YouTube"
-        }
-      }
-
-      // 스크립트 실행이 불가능한 특수 페이지 체크
-      const isRestricted = url.startsWith('chrome://') ||
-        url.startsWith('edge://') ||
-        url.startsWith('chrome-extension://') ||
-        url.startsWith('about:');
-
-      if (isRestricted) {
-        return result; // 기본 정보만 반환
-      }
-
-      try {
-        const [res] = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: extractMetadata,
-          args: [modeValue]
-        });
-        if (res?.result) {
-          // 스크립트 결과가 있으면 덮어쓰기
-          return { ...res.result, tabId, windowId: tab.windowId };
-        }
-      } catch (err) {
-        console.warn(`Power Link: Script extraction failed for ${url}. Trying Network Fallback.`, err);
-
-        // [God Mode Fallback] 스크립트 실행 실패 시 직접 Fetch로 HTML 분석
-        if (url.includes('youtube.com')) {
-          try {
-            const ytData = await fetchYouTubeMetadata(url);
-            if (ytData.channel) {
-              return { ...result, ...ytData };
-            }
-          } catch (fetchErr) {
-            console.error('Network Fallback failed:', fetchErr);
-          }
-        }
-      }
-
-      return result; // 모두 실패 시 기본 fallback 반환
-    });
-
-    // 모든 프로미스를 동시에 실행 (누락 방지)
-    const settleResults = await Promise.allSettled(extractionPromises);
-
-    // 성공한 결과만 매핑 (실패한 비동기 작업은 걸러냄)
-    return settleResults
-      .filter(r => r.status === 'fulfilled' && r.value)
-      .map(r => r.value);
+  if (t.id === 'openOptions' || t.id === 'editRules') { chrome.runtime.openOptionsPage(); return; }
+  if ((t.id === 'doCopy' || t.id === 'doSave') && !busy) {
+    busy = true;
+    const label = t.innerHTML;
+    t.disabled = true;
+    t.innerHTML = '수집 중…';
+    const p = settings.popup;
+    const res = await send({ type: 'pl:collectTabs', action: t.id === 'doCopy' ? 'copy' : 'save', scope: p.scope, plats: p.plats, kinds: p.kinds, after: p.after, sort: p.sort, mode: settings.collect });
+    if (res.ok && res.copyPayload && !(await writeClipboard(res.copyPayload.text, res.copyPayload.html))) { res.ok = false; res.message = '클립보드에 복사하지 못했어요'; }
+    busy = false;
+    t.disabled = false;
+    t.innerHTML = label;
+    toast(res.ok ? res.message + (res.note ? ` (${res.note})` : '') : res.message, res.ok ? (res.note ? 'warning' : 'success') : 'error');
+    linkCount = (await getLinks()).length;
+    const b = document.querySelector('#openPanel b');
+    if (b) b.textContent = linkCount;
   }
-
-  /* getTargetTabs: ID뿐만 아니라 탭 객체 전체를 가져오도록 수정 */
-  async function getTargetTabs(scopeValue) {
-    if (scopeValue === 'current') {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      return tab ? [tab] : [];
-    }
-
-    const checkedIds = Array.from(document.querySelectorAll('.tab-checkbox:checked'))
-      .map(cb => parseInt(cb.value));
-
-    // 현재 열린 모든 탭에서 선택된 ID에 해당하는 탭 객체 필터링
-    const allTabs = await chrome.tabs.query({});
-    return allTabs.filter(tab => checkedIds.includes(tab.id));
-  }
-
-  /* =========================
-     1️⃣ 클립보드 복사
-  ========================== */
-  extractBtn.addEventListener('click', async () => {
-    const results = await performExtraction();
-    if (!results || results.length === 0) {
-      showToast('추출 가능한 링크가 없습니다.', '⚠️');
-      return;
-    }
-
-    try {
-      await copyToClipboard(results);
-      await saveLinksToStorage(results, true); // true = overwrite for "active scope" view
-      showToast(`${results.length}개의 링크가 복사되었습니다.`);
-    } catch (err) {
-      console.error('Action failed:', err);
-      showToast('작업 중 오류가 발생했습니다.', '❌');
-    }
-  });
-
-  /* =========================
-     2️⃣ 링크 목록 보기 (즉시 추출)
-  ========================== */
-  viewListBtn.addEventListener('click', async () => {
-    const results = await performExtraction();
-    if (!results || results.length === 0) {
-      showToast('추출 가능한 링크가 없습니다.', '⚠️');
-      return;
-    }
-
-    try {
-      // 프로필 정보 가져오기 시도
-      let profileName = '사용자';
-      try {
-        if (chrome.identity && chrome.identity.getProfileUserInfo) {
-          const info = await chrome.identity.getProfileUserInfo();
-          if (info && info.email) profileName = info.email.split('@')[0];
-        }
-      } catch (e) { console.warn('Profile info fetch failed:', e); }
-
-      // Overwrite storage for the "active scope" view
-      await saveLinksToStorage(results, true, profileName);
-      chrome.tabs.create({ url: chrome.runtime.getURL('src/list/list.html') });
-    } catch (err) {
-      console.error('Action failed:', err);
-      showToast('작업 중 오류가 발생했습니다.', '❌');
-    }
-  });
 });
 
-/* =========================
-   GOD MODE: Network Fallback for YouTube
-   (Works even when executeScript is blocked)
-========================= */
-async function fetchYouTubeMetadata(url) {
-  try {
-    const response = await fetch(url);
-    const text = await response.text();
-
-    // 1. itemprop="name" (보통 채널명 또는 타이틀)
-    // 영상 페이지에서는 author itemprop를 찾아야 함
-    const authorMatch = text.match(/<span itemprop="author"[^>]*>.*?<link itemprop="name" content="([^"]+)"/s) ||
-      text.match(/<link itemprop="name" content="([^"]+)"[^>]*>[^<]*<\/span>[^<]*<span itemprop="author"/s) ||
-      text.match(/"author":"([^"]+)"/); // Simple JSON-ish match
-
-    let channel = authorMatch ? authorMatch[1] : null;
-
-    // 2. ytInitialData (JSON 파싱 시도)
-    if (!channel) {
-      const dataMatch = text.match(/var ytInitialData = ({.*?});<\/script>/);
-      if (dataMatch) {
-        try {
-          const data = JSON.parse(dataMatch[1]);
-          channel = data.metadata?.channelMetadataRenderer?.title ||
-            data.contents?.twoColumnWatchNextResults?.results?.results?.contents?.[0]?.videoPrimaryInfoRenderer?.owner?.videoOwnerRenderer?.title?.runs?.[0]?.text;
-        } catch (e) { }
-      }
-    }
-
-    return { channel };
-  } catch (e) {
-    return { channel: null };
-  }
-}
-
-/* =========================
-   Helper Functions (Top Level)
-========================= */
-
-async function loadTabs(container, scopeValue) {
-  container.innerHTML = '';
-  const queryOptions = scopeValue === 'all' ? {} : { currentWindow: true };
-  const tabs = await chrome.tabs.query(queryOptions);
-
-  tabs.forEach(tab => {
-    const div = document.createElement('div');
-    div.className = 'tab-item';
-    div.innerHTML = `
-      <label>
-        <input type="checkbox" class="tab-checkbox" value="${tab.id}" checked>
-        ${tab.title || tab.url}
-      </label>
-    `;
-    container.appendChild(div);
-  });
-}
-
-function showToast(message, icon = '✅') {
-  if (!toast || !toastMsg) return;
-  toastMsg.textContent = message;
-  const iconEl = toast.querySelector('.toast-icon');
-  if (iconEl) iconEl.textContent = icon;
-
-  toast.classList.add('show');
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2500);
-}
-
-/**
- * saveLinksToStorage
- * @param {Array} newLinks 
- * @param {boolean} overwrite If true, replaces the entire list
- * @param {string} profileName Optional profile name
- */
-async function saveLinksToStorage(newLinks, overwrite = false, profileName = '사용자') {
-  try {
-    let finalLinks = [];
-
-    if (overwrite) {
-      // Create fresh list with IDs and Timestamps
-      finalLinks = newLinks.map(l => ({
-        ...l,
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
-        createdAt: new Date().toISOString()
-      }));
-    } else {
-      const { savedLinks = [] } = await chrome.storage.local.get('savedLinks');
-      const existingUrls = new Set(savedLinks.map(l => l.url));
-      const uniqueNewLinks = newLinks.filter(l => !existingUrls.has(l.url));
-
-      if (uniqueNewLinks.length === 0) return;
-
-      const linksWithTime = uniqueNewLinks.map(l => ({
-        ...l,
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
-        createdAt: new Date().toISOString()
-      }));
-      finalLinks = [...savedLinks, ...linksWithTime];
-    }
-
-    await chrome.storage.local.set({ savedLinks: finalLinks, profileName });
-    console.info(`Power Link: Saved ${finalLinks.length} links to storage.`);
-  } catch (err) {
-    console.error('Power Link: Storage save failed:', err);
-  }
-}
-
-function extractMetadata(mode) {
-  const getThumbnail = () => {
-    if (window.location.hostname.includes('youtube.com')) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const videoId = urlParams.get('v');
-      if (videoId) return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-    }
-    return document.querySelector('meta[property="og:image"]')?.content ||
-      document.querySelector('meta[name="twitter:image"]')?.content ||
-      document.querySelector('link[rel="apple-touch-icon"]')?.href ||
-      document.querySelector('link[rel="icon"]')?.href || '';
-  };
-
-  const getYouTubeChannelName = () => {
-    if (!window.location.hostname.includes('youtube.com')) return null;
-
-    // 1. 메타데이터 (가장 빠르고 확실함)
-    const isChannelPage = window.location.pathname.startsWith('/@') || window.location.pathname.includes('/channel/');
-    if (isChannelPage) {
-      const metaTitle = document.querySelector('meta[itemprop="name"]')?.content;
-      if (metaTitle) return metaTitle.trim();
-    } else {
-      // 영상 페이지용 메타데이터 (itemprop="author" 내의 name)
-      const metaAuthor = document.querySelector('span[itemprop="author"] link[itemprop="name"]')?.getAttribute('content') ||
-        document.querySelector('link[itemprop="name"]')?.closest('[itemprop="author"]')?.querySelector('link[itemprop="name"]')?.content;
-      if (metaAuthor) return metaAuthor.trim();
-    }
-
-    // 2. 내부 데이터 객체 (DOM이 렌더링되기 전에도 존재함)
-    try {
-      const data = window.ytInitialData;
-      if (data) {
-        // 영상 페이지
-        const videoOwner = data.contents?.twoColumnWatchNextResults?.results?.results?.contents?.find(c => c.videoSecondaryInfoRenderer)?.videoSecondaryInfoRenderer?.owner?.videoOwnerRenderer;
-        if (videoOwner?.title?.runs?.[0]?.text) return videoOwner.title.runs[0].text;
-
-        // 채널 페이지
-        const channelName = data.metadata?.channelMetadataRenderer?.title || data.header?.pageHeaderRenderer?.pageTitle;
-        if (channelName) return channelName;
-      }
-    } catch (e) { }
-
-    // 3. 기존 DOM 셀렉터 체인 (Fallback)
-    const videoOwnerLink =
-      document.querySelector('ytd-video-owner-renderer ytd-channel-name a') ||
-      document.querySelector('#upload-info ytd-channel-name a') ||
-      document.querySelector('.ytd-video-secondary-info-renderer ytd-channel-name a');
-
-    if (videoOwnerLink && videoOwnerLink.innerText.trim()) {
-      return videoOwnerLink.innerText.trim();
-    }
-
-    const channelNameH1 = document.querySelector('h1.dynamicTextViewModelH1 span.yt-core-attributed-string') ||
-      document.querySelector('h1.dynamicTextViewModelH1 span') ||
-      document.querySelector('yt-dynamic-header-renderer h1 span');
-    if (channelNameH1 && channelNameH1.innerText.trim()) {
-      return channelNameH1.innerText.trim();
-    }
-
-    const alternateChannelName =
-      document.querySelector('#channel-name yt-formatted-string') ||
-      document.querySelector('#inner-header-container #text') ||
-      document.querySelector('ytd-channel-name#channel-name a') ||
-      document.querySelector('yt-formatted-string#channel-name') ||
-      document.querySelector('ytd-c4-tabbed-header-renderer #text');
-
-    if (alternateChannelName && alternateChannelName.innerText.trim()) {
-      return alternateChannelName.innerText.trim();
-    }
-
-    // 4. 최후의 수단: Title 파싱
-    if (window.location.pathname.includes('/@')) {
-      const title = document.title;
-      if (title.includes(' - YouTube')) {
-        return title.split(' - YouTube')[0].trim();
-      }
-    }
-
-    return null;
-  };
-
-  const domain = window.location.hostname.replace('www.', '');
-  const title = document.title;
-  const url = window.location.href;
-  const thumbnail = mode === 'full' ? getThumbnail() : null;
-  const channel = getYouTubeChannelName();
-
-  return { title, url, domain, thumbnail, channel };
-}
-
-async function copyToClipboard(results) {
-  let html = '';
-  let plain = '';
-
-  results.forEach(item => {
-    html += `
-      <div class="link-card" style="display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 16px; padding: 12px; margin-bottom: 16px; font-family: sans-serif; max-width: 600px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-decoration: none; color: inherit; overflow: hidden;">
-        ${item.thumbnail ? `<div style="flex-shrink: 0; width: 100px; height: 100px; margin-right: 16px; overflow: hidden; border-radius: 12px; background-color: #f8f9fa;"><img src="${item.thumbnail}" style="width: 100%; height: 100%; object-fit: cover; display: block;"></div>` : ''}
-        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
-          <div style="margin: 0 0 6px 0; font-size: 17px; font-weight: 700; line-height: 1.4; color: #1a1a1b;"><a href="${item.url}" style="color: #0066cc; text-decoration: none;">${item.title}</a></div>
-          <div style="font-size: 13px; color: #5f6368; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"><span style="flex-shrink: 0;">🔗</span><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.url}</span></div>
-          <div style="font-size: 13px; color: #70757a; font-weight: 500;">${item.domain}</div>
-        </div>
-      </div>`;
-    plain += `${item.title}\n${item.url}\n\n`;
-  });
-
-  const clipboardHtml = `<html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
-  const blobHtml = new Blob([clipboardHtml], { type: 'text/html' });
-  const blobText = new Blob([plain.trim()], { type: 'text/plain' });
-
-  try {
-    await navigator.clipboard.write([new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })]);
-  } catch (err) {
-    console.warn('ClipboardItem failed, falling back to writeText:', err);
-    await navigator.clipboard.writeText(plain.trim());
-  }
-}
+(async function init() {
+  [settings, hasKey] = await Promise.all([getSettings(), getApiKey().then(Boolean)]);
+  linkCount = (await getLinks()).length;
+  tabCount = (await chrome.tabs.query({})).length;
+  render();
+})();
