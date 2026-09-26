@@ -53,7 +53,7 @@ const AV = ['#8B6F4E', '#4E6A8B', '#5E7D62', '#7A5C86', '#8B4E55', '#4E7F86'];
 const escAttr = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export function avatar(name, url, cls = '') {
   const n = String(name || '').trim() || '?';
-  if (url && /^https?:/.test(url)) return `<span class="pl-av pl-av--img ${cls}" aria-hidden="true" style="background-image:url('${escAttr(url)}')"></span>`;
+  if (url && /^https?:/.test(url)) return `<img class="pl-av pl-av--img ${cls}" src="${escAttr(url)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`;
   const bg = AV[[...n].reduce((s, ch) => s + ch.charCodeAt(0), 0) % AV.length];
   return `<span class="pl-av ${cls}" aria-hidden="true" style="background-color:${bg}">${escAttr([...n][0].toUpperCase())}</span>`;
 }

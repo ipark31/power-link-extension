@@ -36,10 +36,17 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
 // newest first, up to settings.recentMax. The side panel lists them and jumps back to them.
 const recentKey = (u) => { try { const x = new URL(u); x.hash = ''; return x.href; } catch (e) { return u; } };
 let recentChain = Promise.resolve();
+// recentMax is cached (settings live in storage.sync; reading them on every tab event is wasteful)
+let recentMaxCache = 0;
+async function recentMax() {
+  if (!recentMaxCache) recentMaxCache = Math.max(10, Math.min(500, (await getSettings()).recentMax || 50));
+  return recentMaxCache;
+}
+chrome.storage.onChanged.addListener((ch, area) => { if (area === 'sync' && ch[STORAGE.settings]) recentMaxCache = 0; });
 function recordRecent(tabs, { seed = false } = {}) {
   recentChain = recentChain.then(async () => {
     const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
-    const max = Math.max(10, Math.min(500, (await getSettings()).recentMax || 50));
+    const max = await recentMax();
     const byKey = new Map(list.map((r) => [recentKey(r.url), r]));
     let changed = false;
     for (const t of tabs) {
@@ -47,10 +54,12 @@ function recordRecent(tabs, { seed = false } = {}) {
       const k = recentKey(t.url);
       const prev = byKey.get(k);
       if (seed && prev) continue; // seeding never overrides real visits
-      const at = seed ? (t.lastAccessed || Date.now()) : Date.now();
+      const at = seed ? (t.lastAccessed || Date.now()) : (t.seenAt || Date.now());
+      const title = t.title || (prev && prev.title) || t.url, favIconUrl = t.favIconUrl || (prev && prev.favIconUrl) || '';
+      // already the newest entry with the same details: nothing to write
+      if (!seed && prev && prev === list[0] && prev.title === title && prev.favIconUrl === favIconUrl && prev.tabId === t.id) continue;
       const rec = Object.assign({}, prev || { firstAt: at }, {
-        url: t.url, title: t.title || (prev && prev.title) || t.url, favIconUrl: t.favIconUrl || (prev && prev.favIconUrl) || '',
-        tabId: t.id, windowId: t.windowId, at: prev && seed ? prev.at : at
+        url: t.url, title, favIconUrl, tabId: t.id, windowId: t.windowId, at: prev && seed ? prev.at : at
       });
       byKey.set(k, rec);
       changed = true;
@@ -62,11 +71,25 @@ function recordRecent(tabs, { seed = false } = {}) {
   return recentChain;
 }
 async function seedRecent() { recordRecent(await chrome.tabs.query({}), { seed: true }); }
-chrome.tabs.onActivated.addListener(async ({ tabId }) => { try { recordRecent([await chrome.tabs.get(tabId)]); } catch (e) { /* closed */ } });
-chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab.active && (info.status === 'complete' || info.title || info.favIconUrl)) recordRecent([tab]); });
+// One page load fires several tab events (loading, complete, title, favicon) and switching windows
+// adds focus events: collect them for 300ms and write the list once. Each tab keeps the time it
+// was actually seen, so the order stays exact.
+const pendingRecent = new Map();
+let pendingTimer = 0;
+function queueRecent(tab) {
+  if (!tab || !/^https?:/i.test(tab.url || '')) return;
+  // keyed by address, so quick navigations inside one tab are all kept (as before batching)
+  const k = recentKey(tab.url);
+  pendingRecent.delete(k); // re-insert so the latest-seen page is written last
+  pendingRecent.set(k, Object.assign({}, tab, { seenAt: Date.now() }));
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(() => { const tabs = [...pendingRecent.values()]; pendingRecent.clear(); recordRecent(tabs); }, 300);
+}
+chrome.tabs.onActivated.addListener(async ({ tabId }) => { try { queueRecent(await chrome.tabs.get(tabId)); } catch (e) { /* closed */ } });
+chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab.active && (info.status === 'complete' || info.title || info.favIconUrl)) queueRecent(tab); });
 chrome.windows.onFocusChanged.addListener(async (winId) => {
   if (winId === chrome.windows.WINDOW_ID_NONE) return;
-  try { const [t] = await chrome.tabs.query({ active: true, windowId: winId }); recordRecent([t]); } catch (e) { /* noop */ }
+  try { const [t] = await chrome.tabs.query({ active: true, windowId: winId }); queueRecent(t); } catch (e) { /* noop */ }
 });
 chrome.runtime.onStartup.addListener(() => { seedRecent().catch(() => {}); });
 
@@ -134,20 +157,33 @@ async function bridgeHandleCommand(cmd) {
   }
 }
 
+// write the connection state only when it changes (every write re-renders open side panels)
+let bridgeState = null;
+async function setBridgeState(connected) {
+  if (bridgeState === null) bridgeState = !!((await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || {}).connected;
+  if (bridgeState === connected) return;
+  bridgeState = connected;
+  await chrome.storage.local.set({ [STORAGE.bridge]: { connected, at: Date.now() } });
+}
+
 function bridgeConnect() {
   if (bridgePort) return;
   try { bridgePort = chrome.runtime.connectNative(BRIDGE_HOST); } catch (e) { bridgePort = null; }
-  if (!bridgePort) { chrome.storage.local.set({ [STORAGE.bridge]: { connected: false, at: Date.now() } }); return; }
+  if (!bridgePort) { setBridgeState(false); return; }
   const port = bridgePort;
   port.onMessage.addListener((m) => {
     if (!m) return;
-    if (m.type === 'hello' && m.ok) chrome.storage.local.set({ [STORAGE.bridge]: { connected: true, at: Date.now() } });
+    if (m.type === 'hello' && m.ok) { setBridgeState(true); chrome.alarms.create('pl-bridge', { periodInMinutes: 1 }); }
     else if (m.type === 'others') chrome.storage.local.set({ [STORAGE.recentOthers]: { at: Date.now(), profiles: Array.isArray(m.profiles) ? m.profiles : [] } });
     else if (m.type === 'command') bridgeHandleCommand(m.command).catch(() => {});
   });
   port.onDisconnect.addListener(() => {
+    const why = (chrome.runtime.lastError && chrome.runtime.lastError.message) || '';
     if (bridgePort === port) bridgePort = null;
-    chrome.storage.local.set({ [STORAGE.bridge]: { connected: false, at: Date.now() } });
+    setBridgeState(false);
+    // helper not installed: stop the once-a-minute retry (it only wakes the worker for nothing);
+    // Chrome start, the side panel's [다시 연결] and a new install try again
+    if (/not found|forbidden/i.test(why)) chrome.alarms.clear('pl-bridge');
   });
   bridgeIdentity().then(({ id, name }) => {
     port.postMessage({ type: 'hello', profileId: id, name });
@@ -237,6 +273,7 @@ async function enrichIfNeeded(items, mode) {
 // the UI updates first, details fill in as each batch arrives. Links that already have
 // details (enrichedAt) or failed recently (enrichTriedAt < 24h) are never requested again.
 const ENRICH_FIELDS = ['title', 'thumb', 'category', 'detail', 'account', 'outlier', 'enrichedAt'];
+const DETAIL_CACHE = 'pl_detailCache'; // storage.session: details of links removed this session
 const RETRY_MS = 24 * 3600 * 1000;
 const inFlight = new Set();
 const needsEnrich = (l) => l && l.platform === 'yt' && !l.enrichedAt && !inFlight.has(l.id)
@@ -300,8 +337,10 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
   const settings = await getSettings();
   const mode = modeOverride || settings.collect;
   let items = links.map((l) => toItem(l, source));
-  // reuse details already fetched for these URLs — never ask the API twice
-  const stored = new Map((await getLinks()).map((l) => [globalThis.PLNormalize(l.url), l]));
+  // reuse details already fetched for these URLs — never ask the API twice (also for links that
+  // were deselected on the page earlier this session, see pl:removeUrls)
+  const stored = new Map(Object.entries((await chrome.storage.session.get(DETAIL_CACHE))[DETAIL_CACHE] || {}));
+  for (const l of await getLinks()) stored.set(globalThis.PLNormalize(l.url), l);
   items = items.map((it) => {
     const prev = stored.get(globalThis.PLNormalize(it.url));
     if (!prev || !prev.enrichedAt) return it;
@@ -511,6 +550,18 @@ const handlers = {
     if (!count) return { ok: true, count: 0 };
     const undoToken = await remember(before);
     await setLinks(next);
+    // keep the fetched YouTube details of what was removed, so selecting it again costs no API quota
+    const cache = (await chrome.storage.session.get(DETAIL_CACHE))[DETAIL_CACHE] || {};
+    for (const l of before) {
+      const k = globalThis.PLNormalize(l.url);
+      if (!keys.has(k) || !l.enrichedAt) continue;
+      const keep = {};
+      for (const f of ENRICH_FIELDS) if (l[f] !== undefined) keep[f] = l[f];
+      delete cache[k]; cache[k] = keep;
+    }
+    const ks = Object.keys(cache);
+    for (const k of ks.slice(0, Math.max(0, ks.length - 500))) delete cache[k]; // newest 500 only
+    await chrome.storage.session.set({ [DETAIL_CACHE]: cache });
     return { ok: true, count, undoToken };
   },
 

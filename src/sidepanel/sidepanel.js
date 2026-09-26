@@ -12,8 +12,10 @@ const app = document.getElementById('app');
 const S = {
   tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
   sel: new Set(), open: new Set(), allOpen: false,
-  rq: '', rsort: 'new', rprof: 'all'
+  rq: '', rsort: 'new', rprof: 'all',
+  limit: 60 // rows rendered so far; more are appended while scrolling (see appendMore)
 };
+const PAGE = 60;
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
 let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
 let recentOthers = { profiles: [] }, bridge = null; // other Chrome profiles (native messaging helper)
@@ -73,11 +75,13 @@ const check = (it, cls = '') => `<input type="checkbox" class="pl-check ${cls}" 
 const dur = (it) => (it.detail?.duration ? `<span class="pl-dur">${fmtDuration(it.detail.duration)}</span>` : '');
 const hotTag = (it) => (hot(it) ? `<span class="pl-up" title="채널 평균 대비 조회수">×${it.outlier}</span>` : '');
 // thumbnail box content: video/post image, or a centered avatar for channels / sites without an image
+// Thumbnails are real <img loading="lazy">: only the ones near the viewport are fetched and decoded
+// (background-image fetched every thumbnail of the whole list at once).
 function thumbInner(it, avCls) {
   if (it.kind === 'account') return avatar(it.account?.name || it.title, it.account?.avatar || it.thumb, avCls);
-  return it.thumb ? '' : avatar(it.domain || it.title, '', avCls);
+  return it.thumb && /^https?:/.test(it.thumb) ? `<img class="pl-cover" src="${esc(it.thumb)}" alt="" loading="lazy" decoding="async">` : avatar(it.domain || it.title, '', avCls);
 }
-const thumbBg = (it) => (it.kind === 'account' ? '' : bgImg(it.thumb));
+const thumbBg = () => '';
 
 function tile(it) {
   const acc = it.kind === 'account';
@@ -198,12 +202,13 @@ function renderLinks() {
   links.forEach((l) => { counts[l.platform] = (counts[l.platform] || 0) + 1; });
   const cats = [...new Set(links.map((l) => l.category).filter(Boolean))];
   const allSel = list.length > 0 && list.every((l) => S.sel.has(l.id));
+  const shown = list.slice(0, S.limit);
+  const more = list.length > shown.length ? '<div class="pl-more" data-more aria-hidden="true"></div>' : '';
   const body = !links.length
     ? emptyState('아직 수집한 링크가 없어요', 'Alt + 우클릭 드래그로 링크를 둘러 그리면 여기에 저장돼요. 팝업의 ‘목록에 저장’도 쓸 수 있어요.')
     : !list.length ? emptyState('조건에 맞는 링크가 없어요', '필터나 검색어를 바꿔 보세요.', 'search')
-    : S.view === 'thumb' ? `<div class="pl-grid">${list.map(tile).join('')}</div>`
-    : S.view === 'detail' ? list.map(rowDetail).join('')
-    : list.map(rowList).join('');
+    : S.view === 'thumb' ? `<div class="pl-grid" data-rows>${shown.map(tile).join('')}</div>${more}`
+    : `<div data-rows>${shown.map(S.view === 'detail' ? rowDetail : rowList).join('')}</div>${more}`;
   return `
   <div class="pl-filters">
     <label class="pl-search">${icon('search')}<input type="text" id="q" placeholder="제목, 채널, 메모 검색" value="${esc(S.q)}" aria-label="검색"></label>
@@ -317,7 +322,7 @@ function recentRow(r, saved) {
   const isOpen = !p && openTabs.has(rkey(r.url));
   const isSaved = saved.has(rkey(r.url));
   const vid = ytVideoId(r.url);
-  const media = vid ? `<span class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" style="background-image:url('https://i.ytimg.com/vi/${vid}/mqdefault.jpg')"></span>`
+  const media = vid ? `<img class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="" loading="lazy" decoding="async">`
     : r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">`
     : `<span class="pl-recent__letter">${esc((hostOf(r.url)[0] || '?').toUpperCase())}</span>`;
   const pAttrs = p ? ` data-pid="${esc(p.id)}" data-on="${p.online ? 1 : 0}" data-name="${esc(p.name)}"` : '';
@@ -369,7 +374,7 @@ function renderRecent() {
       <div class="pl-seg" role="group" aria-label="정렬">${[['new', '최근 순'], ['old', '오래된 순']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-scroll pl-scroll--bar">${notice}${list.length ? `<div class="pl-recent-list">${list.map((r) => recentRow(r, saved)).join('')}</div>` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>
+  <div class="pl-scroll pl-scroll--bar">${notice}${list.length ? `<div class="pl-recent-list" data-rows>${list.slice(0, S.limit).map((r) => recentRow(r, saved)).join('')}</div>${list.length > S.limit ? '<div class="pl-more" data-more aria-hidden="true"></div>' : ''}` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>
   <div class="pl-bar" role="toolbar" aria-label="최근 화면 작업">
     <span class="pl-bar__count">${dupCount ? `중복 ${dupCount}개` : `열린 탭 ${openTabList.length}개`}</span>
     <button type="button" class="pl-bar__action" data-act="rDedupe" title="같은 주소로 여러 개 열린 탭을 1개만 남기고 닫아요">${icon('copy', 'pl-i--md')}중복 링크 닫기</button>
@@ -450,10 +455,43 @@ function renderWatch() {
 }
 
 // ------------------------------------------------------------------ frame
+// ------------------------------------------------------------------ progressive list
+// Long lists render PAGE rows first; a sentinel below the rows appends the next PAGE when it comes
+// within 800px of the viewport. Keeps first paint fast and the DOM small (1,000 links used to mean
+// ~150k nodes and every thumbnail fetched up front).
+let moreObserver = null;
+function watchMore() {
+  if (moreObserver) moreObserver.disconnect();
+  const el = app.querySelector('[data-more]');
+  if (!el) return;
+  moreObserver = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) appendMore(); }, { root: app.querySelector('.pl-scroll'), rootMargin: '800px 0px' });
+  moreObserver.observe(el);
+}
+function appendMore() {
+  const rows = app.querySelector('[data-rows]');
+  if (!rows) return;
+  let html = '', total = 0;
+  if (S.tab === 'links') {
+    const list = filtered(); total = list.length;
+    html = list.slice(S.limit, S.limit + PAGE).map(S.view === 'thumb' ? tile : S.view === 'detail' ? rowDetail : rowList).join('');
+  } else if (S.tab === 'recent') {
+    const list = recentFiltered(); total = list.length;
+    const saved = new Set(links.map((l) => rkey(l.url)));
+    html = list.slice(S.limit, S.limit + PAGE).map((r) => recentRow(r, saved)).join('');
+  }
+  S.limit += PAGE;
+  rows.insertAdjacentHTML('beforeend', html);
+  if (S.limit >= total) { const m = app.querySelector('[data-more]'); if (m) m.remove(); if (moreObserver) moreObserver.disconnect(); }
+}
+const resetLimit = () => { S.limit = PAGE; S.toTop = true; }; // new filter / sort / tab: start at the top
+
 function render() {
   const active = document.activeElement;
   const refocus = active && active.id ? active.id : null;
   const selStart = active && active.selectionStart;
+  // keep the list where the user left it (storage updates re-render the panel)
+  const prevScroll = app.querySelector('.pl-scroll');
+  const keep = prevScroll ? { tab: S.tab, top: prevScroll.scrollTop } : null;
   const dark = currentTheme() === 'dark';
   // One header row only: Chrome already draws the panel title bar (icon · "Power Link v…" · pin · ✕)
   // above this page, so the page starts with the tabs and keeps its tool buttons on the same row.
@@ -470,6 +508,10 @@ function render() {
     </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
+  const sc = app.querySelector('.pl-scroll');
+  if (sc && keep && keep.tab === S.tab && keep.top && !S.toTop) sc.scrollTop = keep.top;
+  S.toTop = false;
+  watchMore();
 }
 
 // ------------------------------------------------------------------ actions
@@ -580,12 +622,12 @@ app.addEventListener('click', async (e) => {
   if (!t || t.tagName === 'SELECT') return;
   const act = t.dataset.act, id = t.dataset.id, val = t.dataset.val;
   switch (act) {
-    case 'tab': S.tab = val; if (val === 'recent') { await refreshOpenTabs(); send({ type: 'pl:recentSeed' }); } break;
+    case 'tab': S.tab = val; resetLimit(); if (val === 'recent') { await refreshOpenTabs(); send({ type: 'pl:recentSeed' }); } break;
     case 'collectWin': await collectWindow(); return;
     case 'theme': await setTheme(currentTheme() === 'dark' ? 'light' : 'dark'); break;
     case 'closePanel': window.close(); return;
-    case 'rsort': S.rsort = val; break;
-    case 'rprof': S.rprof = val; break;
+    case 'rsort': S.rsort = val; resetLimit(); break;
+    case 'rprof': S.rprof = val; resetLimit(); break;
     case 'rGo':
       if (t.dataset.pid) await goRecentOther(val, t.dataset.pid, t.dataset.on === '1', t.dataset.name || '다른 프로필');
       else await goRecent(val);
@@ -610,8 +652,8 @@ app.addEventListener('click', async (e) => {
       }, 1500);
       return;
     }
-    case 'platform': S.platform = val; break;
-    case 'view': S.view = val; setSettings({ sidepanel: { view: val } }); break;
+    case 'platform': S.platform = val; resetLimit(); break;
+    case 'view': S.view = val; resetLimit(); setSettings({ sidepanel: { view: val } }); break;
     case 'toggleAll': S.allOpen = !S.allOpen; S.open.clear(); break;
     case 'expand': if (S.allOpen) { S.allOpen = false; filtered().forEach((l) => S.open.add(l.id)); } S.open.has(id) ? S.open.delete(id) : S.open.add(id); break;
     case 'sel': S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); break;
@@ -628,7 +670,7 @@ app.addEventListener('click', async (e) => {
     case 'bDelete': { const ids = targetIds(); if (!(await confirmModal({ title: '목록에서 삭제', message: `수집 링크 ${ids.length}개를 목록에서 삭제할까요?`, ok: '삭제' }))) return; await removeLinks(ids); } S.sel.clear(); return;
     case 'bClear': S.sel.clear(); break;
     case 'kwSource': S.kwSource = val; break;
-    case 'kwFilter': S.q = val; S.tab = 'links'; break;
+    case 'kwFilter': S.q = val; S.tab = 'links'; resetLimit(); break;
     case 'kwCopy': { const kws = keywordStats(links, S.kwSource, 20).map((k) => k.word).join(', '); const ok = await writeClipboard(kws); toast(ok ? '키워드를 복사했어요' : '클립보드에 복사하지 못했어요', ok ? 'success' : 'error'); return; }
     case 'watchCheck': toast('확인하는 중…', 'warning'); report(await send({ type: 'pl:watchCheck' })); return;
     case 'watchRemove': watch.splice(+val, 1); await setWatch(watch); return;
@@ -638,14 +680,16 @@ app.addEventListener('click', async (e) => {
   render();
 });
 
+let searchTimer = 0;
 app.addEventListener('input', (e) => {
-  if (e.target.id === 'q') { S.q = e.target.value; render(); }
-  if (e.target.id === 'rq') { S.rq = e.target.value; render(); }
+  // search re-renders once typing pauses (150ms), not on every keystroke
+  if (e.target.id === 'q') { S.q = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => { resetLimit(); render(); }, 150); }
+  if (e.target.id === 'rq') { S.rq = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => { resetLimit(); render(); }, 150); }
 });
 app.addEventListener('change', async (e) => {
-  if (e.target.id === 'cat') { S.cat = e.target.value; render(); }
-  if (e.target.id === 'kind') { S.kind = e.target.value; render(); }
-  if (e.target.id === 'sort') { S.sort = e.target.value; render(); }
+  if (e.target.id === 'cat') { S.cat = e.target.value; resetLimit(); render(); }
+  if (e.target.id === 'kind') { S.kind = e.target.value; resetLimit(); render(); }
+  if (e.target.id === 'sort') { S.sort = e.target.value; resetLimit(); render(); }
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
 });
 

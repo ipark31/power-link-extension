@@ -122,8 +122,9 @@
       if (!rects.length) continue;
       const r = a.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) continue;
-      const cs = getComputedStyle(a);
-      if (cs.visibility === 'hidden' || cs.opacity === '0') continue;
+      // checkVisibility (Chrome 121+) avoids a style read per link on pages with thousands of links
+      if (a.checkVisibility) { if (!a.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue; }
+      else { const cs = getComputedStyle(a); if (cs.visibility === 'hidden' || cs.opacity === '0') continue; }
       out.push({ a, x: r.left + sx, y: r.top + sy, w: r.width, h: r.height });
     }
     const pc = playerCandidate();
@@ -317,8 +318,12 @@
       const b = boxRect();
       Object.assign(boxEl.style, { display: 'block', left: b.x - sx + 'px', top: b.y - sy + 'px', width: b.w + 'px', height: b.h + 'px' });
     }
+    const prevHits = drag.hits;
     drag.hits = computeHits();
-    if (settings.highlight !== false) {
+    // rebuild the highlight boxes only when the selection or the scroll position changed
+    const sameHl = prevHits && drag.hlAt === sx + ',' + sy && prevHits.size === drag.hits.size && [...drag.hits].every((h) => prevHits.has(h));
+    drag.hlAt = sx + ',' + sy;
+    if (settings.highlight !== false && !sameHl) {
       const frag = document.createDocumentFragment();
       let n = 0;
       for (const c of drag.hits) {
