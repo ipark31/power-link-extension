@@ -2,7 +2,7 @@
 import { getSettings, setSettings, resetSettings, getApiKey, setApiKey, getLinks, setLinks } from '../shared/storage.js';
 import { FIELDS, PLATFORMS, ACTIONS, RULE_COLORS, DEFAULT_SETTINGS, STORAGE } from '../shared/constants.js';
 import { esc, uid } from '../shared/util.js';
-import { icon, logo, version, send, toast } from '../ui/ui.js';
+import { icon, logo, version, send, toast, confirmModal } from '../ui/ui.js';
 import { themeChoice, setTheme, themeReady } from '../ui/theme.js';
 
 const app = document.getElementById('app');
@@ -343,8 +343,8 @@ app.addEventListener('click', async (e) => {
     return;
   }
   if (t.id === 'importSettings') { document.getElementById('importFile').click(); return; }
-  if (t.id === 'resetSettings') { if (!confirm('설정을 처음 상태로 되돌릴까요?')) return; await resetSettings(); settings = await getSettings(); render(); toast('설정을 초기화했어요'); return; }
-  if (t.id === 'clearLinks') { if (!confirm(`수집 목록 ${linkCount}개를 모두 지울까요? 되돌릴 수 없어요.`)) return; await setLinks([]); linkCount = 0; render(); toast('목록을 비웠어요'); }
+  if (t.id === 'resetSettings') { if (!(await confirmModal({ title: '설정 초기화', message: '규칙과 옵션을 처음 상태로 되돌릴까요?\n수집 목록과 API 키는 그대로예요.', ok: '초기화' }))) return; await resetSettings(); settings = await getSettings(); render(); toast('설정을 초기화했어요'); return; }
+  if (t.id === 'clearLinks') { if (!(await confirmModal({ title: '수집 목록 모두 지우기', message: `수집 목록 ${linkCount}개를 모두 지울까요?\n되돌릴 수 없어요.`, ok: '모두 지우기' }))) return; await setLinks([]); linkCount = 0; render(); toast('목록을 비웠어요'); }
 });
 
 app.addEventListener('change', async (e) => {

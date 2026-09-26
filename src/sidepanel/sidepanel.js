@@ -4,7 +4,7 @@ import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, 
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
-import { icon, ytLogo, avatar, send, toast, writeClipboard } from '../ui/ui.js';
+import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal } from '../ui/ui.js';
 import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
 import { makeZip, safeFileName } from '../shared/zip.js';
 
@@ -476,19 +476,7 @@ function render() {
         <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="options" aria-label="설정" title="설정">${icon('sliders', 'pl-i--lg')}</button>
       </div>
     </header>
-    ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}
-    ${S.confirm === 'dedupe' ? `
-    <div class="pl-sheet" data-act="confirmNo">
-      <div class="pl-sheet__card" role="alertdialog" aria-modal="true" aria-labelledby="sheetTitle" aria-describedby="sheetDesc">
-        <div class="pl-sheet__title" id="sheetTitle">중복 링크 닫기</div>
-        <p class="pl-sheet__desc" id="sheetDesc">중복된 링크를 닫고 1개만 남깁니다.<br>이 프로필에 열린 탭을 우선으로 남기고 나머지는 닫아요.</p>
-        <div class="pl-sheet__acts">
-          <button type="button" class="pl-btn" data-act="confirmNo">아니요</button>
-          <button type="button" class="pl-btn pl-btn--ink" data-act="confirmYes" autofocus>예</button>
-        </div>
-      </div>
-    </div>` : ''}`;
-  if (S.confirm) { const b = app.querySelector('[data-act="confirmYes"]'); if (b) b.focus(); return; }
+    ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   else if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
 }
@@ -609,9 +597,9 @@ app.addEventListener('click', async (e) => {
       } else await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val)));
       return;
     case 'rClose': await closeRecent(val); await refreshOpenTabs(); break;
-    case 'rDedupe': await refreshOpenTabs(); S.confirm = 'dedupe'; break;
-    case 'confirmNo': if (e.target.closest('.pl-sheet__card') && t.classList.contains('pl-sheet')) return; S.confirm = null; break;
-    case 'confirmYes': S.confirm = null; render(); await closeDuplicates(); break;
+    case 'rDedupe':
+      if (!(await confirmModal({ title: '중복 링크 닫기', message: '중복된 링크를 닫고 1개만 남깁니다.\n이 프로필에 열린 탭을 우선으로 남기고 나머지는 닫아요.', ok: '예', cancel: '아니요' }))) return;
+      await closeDuplicates(); break;
     case 'rAdd': { const r = recentMerged().find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
     case 'rBridgeRetry': {
       toast('도우미에 연결하는 중…', 'warning');
@@ -634,12 +622,12 @@ app.addEventListener('click', async (e) => {
     case 'watchOne': report(await send({ type: 'pl:watchAdd', ids: [id] })); return;
     case 'options': chrome.runtime.openOptionsPage(); return;
     case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
-    case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !confirm(`탭 ${urls.length}개를 열까요?`)) return; await send({ type: 'pl:openUrls', urls }); return; }
+    case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !(await confirmModal({ title: '새 탭으로 열기', message: `탭 ${urls.length}개를 새로 열까요?`, ok: '열기' }))) return; await send({ type: 'pl:openUrls', urls }); return; }
     case 'bThumbs': await saveThumbsZip(selected()); return;
     case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
-    case 'bDelete': { const ids = targetIds(); if (!confirm(`${ids.length}개를 목록에서 삭제할까요?`)) return; await removeLinks(ids); } S.sel.clear(); return;
+    case 'bDelete': { const ids = targetIds(); if (!(await confirmModal({ title: '목록에서 삭제', message: `수집 링크 ${ids.length}개를 목록에서 삭제할까요?`, ok: '삭제' }))) return; await removeLinks(ids); } S.sel.clear(); return;
     case 'bClear': S.sel.clear(); break;
     case 'kwSource': S.kwSource = val; break;
     case 'kwFilter': S.q = val; S.tab = 'links'; break;
@@ -664,7 +652,6 @@ app.addEventListener('change', async (e) => {
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
 });
 app.addEventListener('keydown', async (e) => {
-  if (S.confirm && e.key === 'Escape') { S.confirm = null; render(); return; }
   const id = e.target.dataset && e.target.dataset.memoInput;
   if (!id) return;
   if (e.key === 'Enter') { e.preventDefault(); await saveMemo(id); }

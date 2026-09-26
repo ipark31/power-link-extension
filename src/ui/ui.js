@@ -82,6 +82,46 @@ export function toast(message, tone = 'success') {
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(() => el.remove(), 220); }, 2600);
 }
 
+// Shared confirmation modal (replaces the browser's confirm()). Resolves true on OK.
+// Enter = OK, Esc / backdrop / cancel = false. Buttons carry data-act="confirmYes" / "confirmNo".
+export function confirmModal({ title = '확인', message = '', ok = '확인', cancel = '취소' } = {}) {
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    const wrap = document.createElement('div');
+    wrap.className = 'pl-app pl-sheet';
+    wrap.innerHTML = `<div class="pl-sheet__card" role="alertdialog" aria-modal="true" aria-labelledby="plSheetTitle" aria-describedby="plSheetDesc">
+      <div class="pl-sheet__title" id="plSheetTitle"></div>
+      <p class="pl-sheet__desc" id="plSheetDesc"></p>
+      <div class="pl-sheet__acts">
+        <button type="button" class="pl-btn" data-act="confirmNo"></button>
+        <button type="button" class="pl-btn pl-btn--ink" data-act="confirmYes"></button>
+      </div>
+    </div>`;
+    wrap.querySelector('.pl-sheet__title').textContent = title;
+    const desc = wrap.querySelector('.pl-sheet__desc');
+    String(message).split('\n').forEach((line, i) => { if (i) desc.appendChild(document.createElement('br')); desc.appendChild(document.createTextNode(line)); });
+    wrap.querySelector('[data-act="confirmNo"]').textContent = cancel;
+    wrap.querySelector('[data-act="confirmYes"]').textContent = ok;
+    const done = (v) => { wrap.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.focus) prev.focus(); resolve(v); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+      else if (e.key === 'Enter' && e.target.dataset.act !== 'confirmNo') { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.key === 'Tab') { // keep focus on the two buttons
+        const b = [...wrap.querySelectorAll('button')]; const i = b.indexOf(document.activeElement);
+        e.preventDefault(); b[(i + (e.shiftKey ? b.length - 1 : 1)) % b.length].focus();
+      }
+    };
+    wrap.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-act]');
+      if (t) done(t.dataset.act === 'confirmYes');
+      else if (!e.target.closest('.pl-sheet__card')) done(false);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(wrap);
+    wrap.querySelector('[data-act="confirmYes"]').focus();
+  });
+}
+
 // Write text/plain (+ optional text/html) from a focused extension page.
 export async function writeClipboard(text, html) {
   try {

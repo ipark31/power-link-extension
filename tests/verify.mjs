@@ -102,8 +102,10 @@ ok('사이드바 북마크', bm === 2, bm + '개');
 const dl = sp.waitForEvent('download', { timeout: 4000 }).catch(() => null);
 await sp.click('[data-act="bExcel"]'); const d = await dl; ok('사이드바 엑셀 다운로드', !!d, d ? d.suggestedFilename() : '');
 const cnt = (await storeLinks()).length;
-sp.once('dialog', (dg) => dg.accept());
-await sp.click('[data-act="bDelete"]'); await sp.waitForTimeout(800);
+let nativeDialog = false; sp.once('dialog', (dg) => { nativeDialog = true; dg.dismiss(); });
+await sp.click('[data-act="bDelete"]'); await sp.waitForTimeout(300);
+ok('삭제 확인은 자체 모달(브라우저 confirm 아님)', !nativeDialog && (await sp.locator('.pl-sheet [data-act="confirmYes"]').count()) === 1);
+await sp.click('.pl-sheet [data-act="confirmYes"]'); await sp.waitForTimeout(800);
 ok('사이드바 삭제', (await storeLinks()).length === cnt - 2, `${cnt} → ${(await storeLinks()).length}`);
 await sp.close();
 

@@ -411,7 +411,7 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-bar__action:hover { background: rgba(255, 255, 255, .12); }
 
 /* confirmation sheet (inside the panel; the viewer never shows native dialogs) */
-.pl-sheet { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .45); }
+.pl-sheet { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .45); }
 .pl-sheet__card { width: 100%; max-width: 320px; padding: 20px; border-radius: 14px; background: var(--pl-bg); border: 1px solid var(--pl-border); box-shadow: var(--pl-shadow-bar); display: flex; flex-direction: column; gap: 8px; animation: pl-in .15s ease; }
 .pl-sheet__title { font-size: 15px; font-weight: 500; }
 .pl-sheet__desc { font-size: 13px; line-height: 1.55; color: var(--pl-text2); }

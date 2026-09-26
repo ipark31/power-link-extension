@@ -66,6 +66,11 @@
     .acts { display: flex; gap: 8px; justify-content: flex-end; }
     button { height: 30px; padding: 0 14px; border-radius: 15px; font-size: 12px; font-weight: 500; cursor: pointer; border: 0; background: #272727; color: #F1F1F1; }
     button.pri { background: #F1F1F1; color: #0F0F0F; }
+    .modal { position: fixed; inset: 0; z-index: 2147483647; pointer-events: auto; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
+    .modal-card { width: 100%; max-width: 340px; padding: 20px; border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 8px; animation: in .15s ease; }
+    .mt { font-size: 15px; font-weight: 500; }
+    .md { font-size: 13px; line-height: 1.55; color: #D0D0D0; }
+    .modal .acts { margin-top: 8px; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes out { to { opacity: 0; transform: translateY(6px); } }`;
 
@@ -121,13 +126,43 @@
       if (cs.visibility === 'hidden' || cs.opacity === '0') continue;
       out.push({ a, x: r.left + sx, y: r.top + sy, w: r.width, h: r.height });
     }
+    const pc = playerCandidate();
+    if (pc) out.push(pc);
     return out;
+  }
+  // The YouTube video player has no link on it: dragging over any part of it selects the video
+  // being watched (a detached <a> carries the URL and title, el is the element on screen).
+  function currentVideoUrl() {
+    try {
+      const u = new URL(location.href);
+      if (!/(^|\.)youtube\.com$/.test(u.hostname)) return null;
+      if (u.pathname === '/watch' && u.searchParams.get('v')) return 'https://www.youtube.com/watch?v=' + u.searchParams.get('v');
+      const m = u.pathname.match(/^\/shorts\/([\w-]{6,})/);
+      return m ? 'https://www.youtube.com/shorts/' + m[1] : null;
+    } catch (e) { return null; }
+  }
+  function playerEl() {
+    for (const el of document.querySelectorAll('#shorts-player, #movie_player, video')) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 40 && r.height > 40 && r.bottom > 0 && r.top < innerHeight) return el;
+    }
+    return null;
+  }
+  function playerCandidate() {
+    const url = currentVideoUrl();
+    const el = url && playerEl();
+    if (!el) return null;
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('title', text(document.title).replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube$/, ''));
+    const r = el.getBoundingClientRect();
+    return { a, el, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height };
   }
   function refreshRects() {
     if (!drag) return;
     const sx = scrollX, sy = scrollY;
     for (const c of drag.cands) {
-      const r = c.a.getBoundingClientRect();
+      const r = (c.el || c.a).getBoundingClientRect();
       c.x = r.left + sx; c.y = r.top + sy; c.w = r.width; c.h = r.height;
     }
   }
@@ -146,11 +181,17 @@
     }
     return c;
   }
+  // a link counts as selected when any part of it is inside the lasso
+  function touchesPoly(c, poly) {
+    const xs = [c.x, c.x + c.w / 2, c.x + c.w], ys = [c.y, c.y + c.h / 2, c.y + c.h];
+    for (const x of xs) for (const y of ys) if (inside({ x, y }, poly)) return true;
+    return poly.some((p) => p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h);
+  }
   function computeHits() {
     const hits = new Set();
     if (drag.rule.shape === 'lasso') {
       if (drag.points.length < 3) return hits;
-      for (const c of drag.cands) if (inside({ x: c.x + c.w / 2, y: c.y + c.h / 2 }, drag.points)) hits.add(c);
+      for (const c of drag.cands) if (touchesPoly(c, drag.points)) hits.add(c);
     } else {
       const b = boxRect();
       for (const c of drag.cands) if (c.x < b.x + b.w && c.x + c.w > b.x && c.y < b.y + b.h && c.y + c.h > b.y) hits.add(c);
@@ -331,8 +372,11 @@
     ensureOverlay();
     if (marksHref !== location.href) { clearMarks(); marksHref = location.href; }
     const doc = marksDoc();
-    for (const a of document.querySelectorAll('a[href]')) {
-      const k = keyOf(a.href);
+    const targets = [...document.querySelectorAll('a[href]')].map((a) => [a, a.href]);
+    const vurl = currentVideoUrl(), pel = vurl && playerEl();
+    if (pel) targets.push([pel, vurl]); // the player stands for the video being watched
+    for (const [a, href] of targets) {
+      const k = keyOf(href);
       if (!keys.has(k)) continue;
       const r = a.getBoundingClientRect();
       if (!r.width && !r.height) continue; // hidden duplicates
@@ -409,6 +453,30 @@
     function close() { clearTimeout(timer); el.classList.add('out'); setTimeout(() => el.remove(), 200); }
   }
 
+  // ---------------------------------------------------------------- confirm modal (page)
+  // Same look as the extension pages' confirmModal, drawn inside the closed shadow root.
+  function pageConfirm(title, message, ok = '확인', cancel = '취소') {
+    ensureOverlay();
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'modal';
+      wrap.innerHTML = '<div class="modal-card" role="alertdialog" aria-modal="true"><div class="mt"></div><div class="md"></div><div class="acts"><button data-v="0"></button><button class="pri" data-v="1"></button></div></div>';
+      wrap.querySelector('.mt').textContent = title;
+      wrap.querySelector('.md').textContent = message;
+      wrap.querySelector('[data-v="0"]').textContent = cancel;
+      wrap.querySelector('[data-v="1"]').textContent = ok;
+      const done = (v) => { wrap.remove(); removeEventListener('keydown', onKey, true); resolve(v); };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+        else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      };
+      wrap.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) done(b.dataset.v === '1'); else if (e.target === wrap) done(false); });
+      addEventListener('keydown', onKey, true);
+      root.appendChild(wrap);
+      wrap.querySelector('.pri').focus();
+    });
+  }
+
   // ---------------------------------------------------------------- finish
   function send(msg) {
     return new Promise((resolve) => {
@@ -445,7 +513,7 @@
     const newKeys = new Set(links.map((l) => keyOf(l.url)));
     const saves = rule.action === 'save' || settings.alsoSave !== false;
     if ((rule.action === 'tabs' || rule.action === 'window') && links.length > (settings.confirmOver || 20)) {
-      if (!confirm(`링크 ${links.length}개를 ${rule.action === 'tabs' ? '새 탭' : '새 창'}으로 열까요?`)) return;
+      if (!(await pageConfirm(rule.action === 'tabs' ? '새 탭으로 열기' : '새 창으로 열기', `링크 ${links.length}개를 ${rule.action === 'tabs' ? '새 탭' : '새 창'}으로 열까요?`, '열기'))) return;
     }
     const lines = links.slice(0, 3).map((l) => '• ' + (l.title || l.url));
     if (links.length > 3) lines.push(`외 ${links.length - 3}개`);
