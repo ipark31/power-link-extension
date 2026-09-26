@@ -90,7 +90,6 @@ ok('사이드바 새 탭 열기', ctx.pages().length - n1 === 2, (ctx.pages().le
 for (const p of ctx.pages().slice(n1)) await p.close();
 await sp.bringToFront();
 await sp.click('[data-act="bThumbs"]'); await sp.waitForTimeout(1500); ok('사이드바 썸네일 저장 반응', (await lastToast(sp)).length > 0, await lastToast(sp));
-await sp.click('[data-act="bEnrich"]'); await sp.waitForTimeout(1500); ok('사이드바 유튜브 정보 반응', (await lastToast(sp)).length > 0, await lastToast(sp));
 await sp.click('[data-act="bWatch"]'); await sp.waitForTimeout(1000); ok('사이드바 워치리스트 반응', (await lastToast(sp)).length > 0, await lastToast(sp));
 await sp.click('[data-act="bBookmark"]'); await sp.waitForTimeout(1000);
 const bm = await sw.evaluate(async () => { const [f] = await chrome.bookmarks.search({ title: 'Power Link' }); return f ? (await chrome.bookmarks.getChildren(f.id)).length : 0; });

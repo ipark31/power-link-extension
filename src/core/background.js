@@ -89,14 +89,56 @@ async function openTabs(urls, { newWindow = false, afterTab = null, background =
 async function enrichIfNeeded(items, mode) {
   let note = '';
   let out = items;
-  if (mode === 'detail' && items.some((i) => i.platform === 'yt')) {
+  const todo = items.filter((i) => i.platform === 'yt' && !i.enrichedAt);
+  if (mode === 'detail' && todo.length) {
     const key = await getApiKey();
     if (!key) note = 'API 키가 없어 유튜브 상세 정보는 건너뛰었어요';
     else {
-      try { out = await enrichYouTube(items, key); } catch (e) { note = '유튜브 정보: ' + e.message; }
+      try {
+        const got = new Map((await enrichYouTube(todo, key)).map((o) => [o.url, o]));
+        out = items.map((i) => got.get(i.url) || i);
+      } catch (e) { note = '유튜브 정보: ' + e.message; }
     }
   }
   return { items: out, note };
+}
+
+// ------------------------------------------------------------------ auto enrichment
+// YouTube details are fetched automatically in the background after links are stored:
+// the UI updates first, details fill in as each batch arrives. Links that already have
+// details (enrichedAt) or failed recently (enrichTriedAt < 24h) are never requested again.
+const ENRICH_FIELDS = ['title', 'thumb', 'category', 'detail', 'account', 'outlier', 'enrichedAt'];
+const RETRY_MS = 24 * 3600 * 1000;
+const inFlight = new Set();
+const needsEnrich = (l) => l && l.platform === 'yt' && !l.enrichedAt && !inFlight.has(l.id)
+  && (!l.enrichTriedAt || Date.now() - Date.parse(l.enrichTriedAt) > RETRY_MS)
+  && ((l.kind === 'post' && l.ids?.videoId) || (l.kind === 'account' && (l.ids?.channelId || l.ids?.handle)));
+
+async function enrichInBackground(ids) {
+  const key = await getApiKey();
+  if (!key || !ids?.length) return 0;
+  const all = await getLinks();
+  const byId = new Map(all.map((l) => [l.id, l]));
+  const queue = ids.map((id) => byId.get(id)).filter(needsEnrich);
+  if (!queue.length) return 0;
+  queue.forEach((l) => inFlight.add(l.id));
+  (async () => {
+    const settings = await getSettings();
+    for (let i = 0; i < queue.length; i += 20) {
+      const batch = queue.slice(i, i + 20);
+      let out = batch;
+      try { out = applyCategoryRules(await enrichYouTube(batch, key), settings); } catch (e) { /* quota / network: mark tried */ }
+      const tried = new Date().toISOString();
+      // patch only enrichment fields so memo/category edits made meanwhile survive
+      await updateLinks(out.map((o) => {
+        const patch = { id: o.id, enrichTriedAt: tried };
+        if (o.enrichedAt) for (const f of ENRICH_FIELDS) if (o[f] !== undefined) patch[f] = o[f];
+        return patch;
+      }));
+      batch.forEach((l) => inFlight.delete(l.id));
+    }
+  })();
+  return queue.length;
 }
 
 // Undo snapshots live in session storage so they survive a service-worker restart.
@@ -129,8 +171,18 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
   const settings = await getSettings();
   const mode = modeOverride || settings.collect;
   let items = links.map((l) => toItem(l, source));
-  if (mode !== 'link') await fillMissingTitles(items);
-  const en = await enrichIfNeeded(items, mode);
+  // reuse details already fetched for these URLs — never ask the API twice
+  const stored = new Map((await getLinks()).map((l) => [globalThis.PLNormalize(l.url), l]));
+  items = items.map((it) => {
+    const prev = stored.get(globalThis.PLNormalize(it.url));
+    if (!prev || !prev.enrichedAt) return it;
+    const keep = {};
+    for (const f of ENRICH_FIELDS) if (prev[f] !== undefined) keep[f] = prev[f];
+    return Object.assign({}, it, keep);
+  });
+  if (mode !== 'link') await fillMissingTitles(items.filter((i) => !i.enrichedAt));
+  // a detail-mode copy needs the numbers now; everything else fills in afterwards
+  const en = action === 'copy' ? await enrichIfNeeded(items, mode) : { items, note: '' };
   items = applyCategoryRules(en.items, settings);
   let undoToken = null;
   let message = '';
@@ -138,8 +190,9 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
 
   if (action === 'save' || settings.alsoSave) {
     const before = await getLinks();
-    await saveLinks(items);
+    const ids = await saveLinks(items);
     undoToken = await remember(before);
+    enrichInBackground(ids).catch(() => {});
   }
   if (action === 'copy') {
     const { text, html } = buildCopy(items, settings, mode);
@@ -336,6 +389,8 @@ const handlers = {
     await openTabs(msg.urls, { newWindow: !!msg.newWindow, background: settings.bgTabs !== false });
     return { ok: true };
   },
+
+  'pl:enrichAuto': async (msg) => ({ ok: true, queued: await enrichInBackground(msg.ids || []) }),
 
   'pl:enrich': async (msg) => {
     const key = await getApiKey();

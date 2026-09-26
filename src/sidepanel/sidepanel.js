@@ -1,5 +1,5 @@
 // Power Link — side panel (collected links, keywords, watchlist)
-import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, setWatch } from '../shared/storage.js';
+import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
@@ -10,7 +10,7 @@ const S = {
   tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
   sel: new Set(), open: new Set(), allOpen: false, editing: null, draft: ''
 };
-let links = [], watch = [], settings = null, watchCheckedAt = null;
+let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
 const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['title', '제목순']];
@@ -131,8 +131,7 @@ function rowDetail(it) {
       <button type="button" class="pl-icon-btn pl-icon-btn--xs ${open ? 'is-on' : ''}" data-act="expand" data-id="${it.id}" aria-label="채널 정보 펼치기" data-tip="채널 정보" data-tip-align="end">${icon('chevron', 'pl-i--sm pl-chevron')}</button>
     </div>` : `
     <div class="pl-strip">
-      <span class="pl-strip__sub pl-u-grow">${it.platform === 'yt' ? '유튜브 정보 수집 전이에요' : '채널·계정 정보 없음'}</span>
-      ${it.platform === 'yt' ? `<button type="button" class="pl-btn pl-btn--xs pl-btn--soft" data-act="enrichOne" data-id="${it.id}">${icon('chart', 'pl-i--xs')}정보 가져오기</button>` : ''}
+      <span class="pl-strip__sub pl-u-grow">${ytState(it)}</span>
       <button type="button" class="pl-icon-btn pl-icon-btn--xs ${open ? 'is-on' : ''}" data-act="expand" data-id="${it.id}" aria-label="펼치기" data-tip="펼치기" data-tip-align="end">${icon('chevron', 'pl-i--sm pl-chevron')}</button>
     </div>`;
   const memo = editing ? memoEditor(it)
@@ -179,6 +178,27 @@ function tile(it) {
   </div>`;
 }
 
+// Status line for YouTube items whose details are not in yet (fetched automatically).
+function ytState(it) {
+  const canFetch = (it.kind === 'post' && it.ids?.videoId) || (it.kind === 'account' && (it.ids?.channelId || it.ids?.handle));
+  if (it.platform !== 'yt' || !canFetch) return '채널·계정 정보 없음';
+  if (!hasKey) return '설정에서 YouTube API 키를 넣으면 정보가 자동으로 채워져요';
+  if (it.enrichTriedAt && !it.enrichedAt) return '유튜브 정보를 찾지 못했어요';
+  return '<span class="pl-spinner" aria-hidden="true"></span>유튜브 정보 불러오는 중…';
+}
+
+// Ask the background to fetch missing YouTube details for what is on screen,
+// starting from the bottom of the list. Already-fetched links are skipped there.
+let kickTimer = 0;
+function kickEnrich() {
+  if (!hasKey) return;
+  clearTimeout(kickTimer);
+  kickTimer = setTimeout(() => {
+    const ids = filtered().filter((l) => l.platform === 'yt' && !l.enrichedAt && !l.enrichTriedAt && (l.ids?.videoId || l.ids?.channelId || l.ids?.handle)).map((l) => l.id).reverse();
+    if (ids.length) send({ type: 'pl:enrichAuto', ids });
+  }, 300);
+}
+
 function emptyState(title, desc) {
   return `<div class="pl-empty"><div class="pl-empty__icon">${icon('link', 'pl-i--lg')}</div><div class="pl-empty__title">${title}</div><div class="pl-caption">${desc}</div></div>`;
 }
@@ -205,7 +225,7 @@ function renderLinks() {
       <div class="pl-seg pl-seg--sm pl-seg--inline">${[['all', '전체'], ['post', '게시물'], ['account', '채널·계정']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.kind === id}" data-act="kind" data-val="${id}">${l}</button>`).join('')}</div>
       <select class="pl-select pl-select--sm" id="cat" aria-label="카테고리" style="max-width:112px;"><option value="all">카테고리 전체</option>${cats.map((c) => `<option ${S.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
       <span class="pl-u-grow"></span>
-      ${S.view === 'detail' ? `<button type="button" class="pl-btn pl-btn--soft pl-btn--xs" data-act="toggleAll">${icon(S.allOpen ? 'chevronUp' : 'chevron', 'pl-i--xs')}${S.allOpen ? '모두 접기' : '모두 펼치기'}</button>` : ''}
+      ${S.view === 'detail' ? `<button type="button" class="pl-btn pl-btn--soft pl-btn--xs" data-act="toggleAll" data-tip="${S.allOpen ? '모두 접기' : '모두 펼치기'}" data-tip-align="end" style="white-space:nowrap;">${icon(S.allOpen ? 'chevronUp' : 'chevron', 'pl-i--xs')}${S.allOpen ? '접기' : '펼치기'}</button>` : ''}
     </div>
     <div class="pl-head pl-caption">
       <input type="checkbox" class="pl-checkbox" data-act="selAll" ${allSel ? 'checked' : ''} aria-label="전체 선택">
@@ -221,7 +241,6 @@ function renderLinks() {
     <button type="button" class="pl-toolbar__btn" data-act="bCopy" aria-label="복사" data-tip="복사">${icon('copy')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bOpen" aria-label="새 탭으로 열기" data-tip="새 탭으로 열기">${icon('external')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bThumbs" aria-label="썸네일 일괄 저장" data-tip="썸네일 일괄 저장">${icon('image')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bEnrich" aria-label="유튜브 정보 가져오기" data-tip="유튜브 정보 가져오기">${icon('chart')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bWatch" aria-label="워치리스트에 추가" data-tip="워치리스트에 추가">${icon('eye')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bBookmark" aria-label="북마크" data-tip="북마크에 추가">${icon('bookmark')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bExcel" aria-label="엑셀 다운로드" data-tip="엑셀 다운로드">${icon('download')}</button>
@@ -275,16 +294,14 @@ function render() {
   const refocus = active && active.id ? active.id : active && active.dataset && active.dataset.memoInput ? 'memo' : null;
   const selStart = active && active.selectionStart;
   app.innerHTML = `
-    <div class="pl-panel__head">
-      <span class="pl-brand__mark pl-brand__mark--sm">${icon('link')}</span>
-      <span class="pl-u-strong" style="color:var(--pl-text-2);">Power Link</span>
-      <span class="pl-badge pl-badge--mono" title="버전">v${version()}</span>
-      <span class="pl-u-grow"></span>
+    <header class="pl-panel__head pl-panel__head--tabs">
+      <span class="pl-brand__mark pl-brand__mark--sm" title="Power Link">${icon('link')}</span>
+      <nav class="pl-tabs pl-tabs--inline" role="tablist">
+        ${[['links', '수집 링크', links.length], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
+      </nav>
+      <span class="pl-badge pl-badge--mono pl-u-push" title="버전">v${version()}</span>
       <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="options" aria-label="설정" data-tip="설정" data-tip-pos="below" data-tip-align="end">${icon('sliders')}</button>
-    </div>
-    <nav class="pl-tabs" role="tablist">
-      ${[['links', '수집 링크', links.length], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
-    </nav>
+    </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   else if (refocus === 'q') { const el = app.querySelector('#q'); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
@@ -335,13 +352,11 @@ app.addEventListener('click', async (e) => {
     case 'memo': { const it = links.find((l) => l.id === id); S.editing = id; S.draft = it?.memo || ''; break; }
     case 'memoSave': await saveMemo(id); return;
     case 'memoCancel': S.editing = null; break;
-    case 'enrichOne': toast('유튜브 정보를 가져오는 중…', 'warning'); report(await send({ type: 'pl:enrich', ids: [id] })); return;
     case 'watchOne': report(await send({ type: 'pl:watchAdd', ids: [id] })); return;
     case 'options': chrome.runtime.openOptionsPage(); return;
     case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
     case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !confirm(`탭 ${urls.length}개를 열까요?`)) return; await send({ type: 'pl:openUrls', urls }); return; }
     case 'bThumbs': report(await send({ type: 'pl:thumbs', ids: targetIds() })); return;
-    case 'bEnrich': toast('유튜브 정보를 가져오는 중…', 'warning'); report(await send({ type: 'pl:enrich', ids: targetIds() })); return;
     case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
@@ -375,7 +390,8 @@ app.addEventListener('keydown', async (e) => {
 });
 
 chrome.storage.onChanged.addListener(async (ch, area) => {
-  if (area === 'local' && ch[STORAGE.links]) { links = ch[STORAGE.links].newValue || []; const ids = new Set(links.map((l) => l.id)); [...S.sel].forEach((i) => ids.has(i) || S.sel.delete(i)); render(); }
+  if (area === 'local' && ch[STORAGE.links]) { links = ch[STORAGE.links].newValue || []; const ids = new Set(links.map((l) => l.id)); [...S.sel].forEach((i) => ids.has(i) || S.sel.delete(i)); render(); kickEnrich(); }
+  if (area === 'local' && ch[STORAGE.apiKey]) { hasKey = !!ch[STORAGE.apiKey].newValue; render(); kickEnrich(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
   if (area === 'local' && ch.pl_watchCheckedAt) watchCheckedAt = ch.pl_watchCheckedAt.newValue;
   if (area === 'sync' && ch[STORAGE.settings]) settings = await getSettings();
@@ -386,5 +402,7 @@ chrome.storage.onChanged.addListener(async (ch, area) => {
   S.view = settings.sidepanel?.view || 'list';
   [links, watch] = await Promise.all([getLinks(), getWatch()]);
   ({ pl_watchCheckedAt: watchCheckedAt } = await chrome.storage.local.get('pl_watchCheckedAt'));
-  render();
+  render();                       // screen first
+  hasKey = !!(await getApiKey());  // then details, asynchronously
+  if (hasKey) { render(); kickEnrich(); }
 })();
