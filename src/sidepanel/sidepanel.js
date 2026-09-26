@@ -259,6 +259,17 @@ async function refreshOpenTabs() {
   const tabs = await chrome.tabs.query({});
   openTabs = new Map(tabs.filter((t) => t.url).map((t) => [rkey(t.url), t]));
 }
+// YouTube video id from watch / shorts / youtu.be / embed URLs
+function ytVideoId(u) {
+  try {
+    const x = new URL(u), h = x.hostname.replace(/^(www|m|music)\./, '');
+    if (h === 'youtu.be') return x.pathname.slice(1, 12) || null;
+    if (h !== 'youtube.com') return null;
+    if (x.pathname === '/watch') return x.searchParams.get('v');
+    const m = x.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{6,})/);
+    return m ? m[1] : null;
+  } catch (e) { return null; }
+}
 function recentFiltered() {
   const q = S.rq.trim().toLowerCase();
   const list = q ? recent.filter((r) => (r.title + ' ' + r.url).toLowerCase().includes(q)) : recent.slice();
@@ -270,7 +281,9 @@ function renderRecent() {
   const rows = list.map((r) => {
     const isOpen = openTabs.has(rkey(r.url));
     const isSaved = saved.has(rkey(r.url));
-    const fav = r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">` : `<span class="pl-recent__fav pl-recent__fav--empty">${icon('link', 'pl-i--xs')}</span>`;
+    const vid = ytVideoId(r.url);
+    const fav = vid ? `<span class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" style="background-image:url('https://i.ytimg.com/vi/${vid}/mqdefault.jpg')"></span>`
+      : r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">` : `<span class="pl-recent__fav pl-recent__fav--empty">${icon('link', 'pl-i--xs')}</span>`;
     return `<div class="pl-recent">
       <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}" title="${isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기'}">
         ${fav}

@@ -619,6 +619,9 @@ button.pl-switch { border: 0; padding: 0; cursor: pointer; }
 .pl-recent__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--pl-sp-5); padding: 9px var(--pl-sp-4); border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: 8px; font: inherit; color: inherit; }
 .pl-recent__main:focus-visible { outline: 2px solid var(--pl-accent); outline-offset: -2px; }
 .pl-recent__fav { width: 16px; height: 16px; flex-shrink: 0; border-radius: 3px; object-fit: contain; }
+.pl-recent__thumb { width: 64px; height: 36px; flex-shrink: 0; border-radius: 6px; background: var(--pl-surface-3) center / cover no-repeat; }
+.pl-recent__thumb--short { width: 36px; height: 48px; margin: 0 14px; }
+.pl-recent__main > .pl-recent__fav { margin: 0 24px; } /* keep titles aligned with 64px video thumbnails */
 .pl-recent__fav--empty { display: grid; place-items: center; background: var(--pl-surface-3); color: var(--pl-text-faint); }
 .pl-recent__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pl-recent__title { font-size: 12.5px; font-weight: var(--pl-fw-semibold); color: var(--pl-text); }
