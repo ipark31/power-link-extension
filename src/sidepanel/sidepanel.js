@@ -4,7 +4,7 @@ import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, 
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
-import { icon, logo, ytLogo, avatar, version, send, toast, writeClipboard } from '../ui/ui.js';
+import { icon, ytLogo, avatar, send, toast, writeClipboard } from '../ui/ui.js';
 import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
 import { makeZip, safeFileName } from '../shared/zip.js';
 
@@ -463,22 +463,19 @@ function render() {
   const refocus = active && active.id ? active.id : active && active.dataset && active.dataset.memoInput ? 'memo' : null;
   const selStart = active && active.selectionStart;
   const dark = currentTheme() === 'dark';
+  // One header row only: Chrome already draws the panel title bar (icon · "Power Link v…" · pin · ✕)
+  // above this page, so the page starts with the tabs and keeps its tool buttons on the same row.
   app.innerHTML = `
-    <header class="pl-sp__head">
-      ${logo(22, 1.2)}
-      <span class="pl-sp__name">Power Link</span>
-      <span class="pl-sp__ver">v${version()}</span>
+    <header class="pl-tabs-row">
+      <nav class="pl-tabs" role="tablist">
+        ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
+      </nav>
       <div class="pl-sp__tools">
-        <button type="button" class="pl-ibtn" data-act="collectWin" aria-label="현재 창의 링크 모으기" title="현재 창의 링크 모으기">${icon('collect', 'pl-i--lg')}</button>
-        <button type="button" class="pl-ibtn" data-act="theme" aria-label="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}" title="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}">${icon(dark ? 'sun' : 'moon', 'pl-i--lg')}</button>
-        <button type="button" class="pl-ibtn" data-act="options" aria-label="설정" title="설정">${icon('sliders', 'pl-i--lg')}</button>
-        <span class="pl-sp__sep" aria-hidden="true"></span>
-        <button type="button" class="pl-ibtn" data-act="closePanel" aria-label="사이드 패널 닫기" title="사이드 패널 닫기">${icon('close', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="collectWin" aria-label="현재 창의 링크 모으기" title="현재 창의 링크 모으기">${icon('collect', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="theme" aria-label="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}" title="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}">${icon(dark ? 'sun' : 'moon', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="options" aria-label="설정" title="설정">${icon('sliders', 'pl-i--lg')}</button>
       </div>
     </header>
-    <nav class="pl-tabs" role="tablist">
-      ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
-    </nav>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}
     ${S.confirm === 'dedupe' ? `
     <div class="pl-sheet" data-act="confirmNo">

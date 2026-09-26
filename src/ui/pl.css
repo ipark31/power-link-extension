@@ -312,7 +312,9 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 
 /* Tabs. The underline is a real border-bottom (transparent when not selected):
    an inset box-shadow bleeds 1px gray lines on the tab sides under display scaling. */
-.pl-tabs { height: 48px; flex-shrink: 0; display: flex; align-items: stretch; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--pl-border); overflow-x: auto; scrollbar-width: none; }
+.pl-tabs-row { height: 48px; flex-shrink: 0; display: flex; align-items: stretch; padding: 6px 4px 0 8px; border-bottom: 1px solid var(--pl-border); }
+.pl-tabs-row .pl-sp__tools { align-self: center; margin-top: -6px; flex-shrink: 0; }
+.pl-tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .pl-tab {
   border: 0; border-bottom: 2px solid transparent; border-radius: 0; outline-offset: -2px; background: none;
   padding: 0 10px; display: flex; align-items: center; gap: 5px; flex-shrink: 0;
@@ -320,6 +322,7 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 }
 .pl-tab:hover { background: var(--pl-chip); }
 .pl-tab[aria-selected="true"] { color: var(--pl-text); background: var(--pl-chip); border-bottom-color: var(--pl-text); }
+@media (max-width: 440px) { .pl-tab { padding: 0 8px; } .pl-tabs-row { padding-left: 6px; } }
 .pl-tab__n { font-size: 11px; font-weight: 400; color: var(--pl-muted); }
 
 .pl-filters { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; border-bottom: 1px solid var(--pl-divider); }
