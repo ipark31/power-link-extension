@@ -197,6 +197,7 @@ function viewGeneral() {
     ${row('새 탭을 뒤에서 열기', '지금 보는 탭을 유지한 채 뒤쪽에 순서대로 열어요.', sw('bgTabs', settings.bgTabs))}
     ${row('완료 알림', '수집이 끝나면 페이지 오른쪽 아래에 결과를 보여줘요.', sw('notify', settings.notify))}
     ${row('많이 열 때 확인', '이 개수를 넘으면 열기 전에 한 번 물어봐요.', `<select class="pl-select" id="confirmOver" style="width:100px;">${[10, 20, 50, 100].map((n) => `<option value="${n}" ${settings.confirmOver === n ? 'selected' : ''}>${n}개</option>`).join('')}</select>`)}
+    ${row('최근 작업 화면 기록 수', '사이드바 ‘최근 화면’에 남길 탭 개수예요. 넘으면 오래된 것부터 지워요.', `<select class="pl-select" id="recentMax" style="width:100px;">${[20, 50, 100, 200, 500].map((n) => `<option value="${n}" ${(settings.recentMax || 50) === n ? 'selected' : ''}>${n}개</option>`).join('')}</select>`)}
     ${row('사이드바 열기 단축키', '기본값은 Alt + Shift + L 이에요. 크롬 단축키 설정에서 바꿀 수 있어요.', `<span class="pl-head" style="gap:4px;"><span class="pl-kbd pl-kbd--md">Alt</span><span class="pl-kbd-plus">+</span><span class="pl-kbd pl-kbd--md">Shift</span><span class="pl-kbd-plus">+</span><span class="pl-kbd pl-kbd--md">L</span></span><button type="button" class="pl-text-link" id="shortcuts" style="border:0;background:none;cursor:pointer;">변경</button>`)}
   </section>
   <section class="pl-card pl-card--lg">
@@ -296,6 +297,7 @@ app.addEventListener('change', async (e) => {
   if (d.rule !== undefined && d.rk && t.tagName === 'SELECT') return setRule(+d.rule, { [d.rk]: t.value });
   if (d.crule !== undefined) return save({ catRules: settings.catRules.map((r, i) => (i === +d.crule ? Object.assign({}, r, { [d.ck]: t.value }) : r)) });
   if (t.id === 'confirmOver') return save({ confirmOver: +t.value });
+  if (t.id === 'recentMax') return save({ recentMax: +t.value });
   if (t.id === 'importFile' && t.files[0]) {
     try {
       const data = JSON.parse(await t.files[0].text());

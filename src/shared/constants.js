@@ -71,6 +71,7 @@ export const DEFAULT_SETTINGS = {
   sameSite: false,
   bgTabs: true,
   confirmOver: 20,
+  recentMax: 50,               // 최근 작업 화면 기록 수
   notify: true,
   memoExport: true,
   memoSearch: true,
@@ -92,5 +93,6 @@ export const STORAGE = {
   ytCache: 'pl_ytCache',
   watch: 'pl_watch',
   quota: 'pl_quota',
-  lastGrab: 'pl_lastGrab'
+  lastGrab: 'pl_lastGrab',
+  recent: 'pl_recent'          // 최근 작업 화면 (chrome.storage.local)
 };

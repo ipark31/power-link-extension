@@ -11,6 +11,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }); } catch (e) { /* older Chrome */ }
   chrome.alarms.create('pl-watch', { periodInMinutes: 360 });
   if (details.reason === 'update' || details.reason === 'install') await migrateV1();
+  seedRecent().catch(() => {});
 });
 
 // v1.x stored links under "savedLinks"; bring them into the v2 list once.
@@ -28,6 +29,45 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
     try { await chrome.sidePanel.open({ windowId: win }); } catch (e) { /* needs user gesture */ }
   }
 });
+
+// ------------------------------------------------------------------ recent screens
+// Every tab the user looks at (this Chrome profile, all windows) is recorded once per URL,
+// newest first, up to settings.recentMax. The side panel lists them and jumps back to them.
+const recentKey = (u) => { try { const x = new URL(u); x.hash = ''; return x.href; } catch (e) { return u; } };
+let recentChain = Promise.resolve();
+function recordRecent(tabs, { seed = false } = {}) {
+  recentChain = recentChain.then(async () => {
+    const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+    const max = Math.max(10, Math.min(500, (await getSettings()).recentMax || 50));
+    const byKey = new Map(list.map((r) => [recentKey(r.url), r]));
+    let changed = false;
+    for (const t of tabs) {
+      if (!t || !/^https?:/i.test(t.url || '') || t.incognito) continue;
+      const k = recentKey(t.url);
+      const prev = byKey.get(k);
+      if (seed && prev) continue; // seeding never overrides real visits
+      const at = seed ? (t.lastAccessed || Date.now()) : Date.now();
+      const rec = Object.assign({}, prev || { firstAt: at }, {
+        url: t.url, title: t.title || (prev && prev.title) || t.url, favIconUrl: t.favIconUrl || (prev && prev.favIconUrl) || '',
+        tabId: t.id, windowId: t.windowId, at: prev && seed ? prev.at : at
+      });
+      byKey.set(k, rec);
+      changed = true;
+    }
+    if (!changed) return;
+    const next = [...byKey.values()].sort((a, b) => b.at - a.at).slice(0, max);
+    await chrome.storage.local.set({ [STORAGE.recent]: next });
+  }).catch(() => {});
+  return recentChain;
+}
+async function seedRecent() { recordRecent(await chrome.tabs.query({}), { seed: true }); }
+chrome.tabs.onActivated.addListener(async ({ tabId }) => { try { recordRecent([await chrome.tabs.get(tabId)]); } catch (e) { /* closed */ } });
+chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab.active && (info.status === 'complete' || info.title || info.favIconUrl)) recordRecent([tab]); });
+chrome.windows.onFocusChanged.addListener(async (winId) => {
+  if (winId === chrome.windows.WINDOW_ID_NONE) return;
+  try { const [t] = await chrome.tabs.query({ active: true, windowId: winId }); recordRecent([t]); } catch (e) { /* noop */ }
+});
+chrome.runtime.onStartup.addListener(() => { seedRecent().catch(() => {}); });
 
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'pl-watch') checkWatchlist().catch(() => {}); });
 
@@ -377,6 +417,15 @@ const handlers = {
     const settings = await getSettings();
     await openTabs(msg.urls, { newWindow: !!msg.newWindow, background: settings.bgTabs !== false });
     return { ok: true };
+  },
+
+  'pl:recentSeed': async () => { await seedRecent(); await recentChain; return { ok: true }; },
+
+  'pl:recentAdd': async (msg) => {
+    const links = (msg.items || []).filter((i) => /^https?:/i.test(i.url)).map((i) => ({ url: i.url, title: i.title, thumb: '' }));
+    if (!links.length) return { ok: false, message: '추가할 링크가 없어요' };
+    const res = await runAction({ action: 'save', links, source: 'recent', viaPage: true });
+    return Object.assign(res, { message: `수집 링크에 ${links.length}개를 추가했어요` });
   },
 
   'pl:enrichAuto': async (msg) => ({ ok: true, queued: await enrichInBackground(msg.ids || []) }),

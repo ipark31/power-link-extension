@@ -1,4 +1,4 @@
-// Power Link — side panel (collected links, keywords, watchlist)
+// Power Link — side panel (collected links, recent screens, keywords, watchlist)
 import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
@@ -9,9 +9,11 @@ import { makeZip, safeFileName } from '../shared/zip.js';
 const app = document.getElementById('app');
 const S = {
   tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
-  sel: new Set(), open: new Set(), allOpen: false, editing: null, draft: ''
+  sel: new Set(), open: new Set(), allOpen: false, editing: null, draft: '',
+  rq: '', rsort: 'new'
 };
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
+let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
 const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['title', '제목순']];
@@ -250,6 +252,60 @@ function renderLinks() {
   </div>` : ''}`;
 }
 
+// ------------------------------------------------------------------ recent screens
+const rkey = (u) => { try { const x = new URL(u); x.hash = ''; return x.href; } catch (e) { return u; } };
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
+async function refreshOpenTabs() {
+  const tabs = await chrome.tabs.query({});
+  openTabs = new Map(tabs.filter((t) => t.url).map((t) => [rkey(t.url), t]));
+}
+function recentFiltered() {
+  const q = S.rq.trim().toLowerCase();
+  const list = q ? recent.filter((r) => (r.title + ' ' + r.url).toLowerCase().includes(q)) : recent.slice();
+  return list.sort((a, b) => (S.rsort === 'old' ? a.at - b.at : b.at - a.at));
+}
+function renderRecent() {
+  const list = recentFiltered();
+  const saved = new Set(links.map((l) => rkey(l.url)));
+  const rows = list.map((r) => {
+    const isOpen = openTabs.has(rkey(r.url));
+    const isSaved = saved.has(rkey(r.url));
+    const fav = r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">` : `<span class="pl-recent__fav pl-recent__fav--empty">${icon('link', 'pl-i--xs')}</span>`;
+    return `<div class="pl-recent">
+      <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}" title="${isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기'}">
+        ${fav}
+        <span class="pl-recent__text">
+          <span class="pl-recent__title pl-u-truncate">${esc(r.title || r.url)}</span>
+          <span class="pl-recent__sub pl-u-truncate">${isOpen ? '<b class="pl-recent__open">열림</b> · ' : ''}${esc(hostOf(r.url))} · ${esc(timeAgo(new Date(r.at).toISOString()))}</span>
+        </span>
+      </button>
+      <button type="button" class="pl-icon-btn pl-icon-btn--sm ${isSaved ? 'is-on' : ''}" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" data-tip="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" data-tip-align="end" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--sm')}</button>
+      <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="rDel" data-val="${esc(r.url)}" aria-label="목록에서 삭제" data-tip="목록에서 삭제" data-tip-align="end">${icon('trash', 'pl-i--sm')}</button>
+    </div>`;
+  }).join('');
+  return `
+  <div class="pl-panel__filters">
+    <label class="pl-input-group">${icon('search', 'pl-i--sm')}<input type="text" id="rq" placeholder="제목, 주소 검색" value="${esc(S.rq)}"></label>
+    <div class="pl-head pl-caption">
+      <span style="white-space:nowrap;">${list.length}개 · 최대 ${settings.recentMax || 50}개 기록</span>
+      <div class="pl-seg pl-seg--sm pl-seg--inline pl-u-push" role="group" aria-label="정렬">${[['new', '최근 화면'], ['old', '오래된 화면']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
+    </div>
+  </div>
+  <div class="pl-panel__scroll">${rows || emptyState(recent.length ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', recent.length ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.')}</div>`;
+}
+async function goRecent(url) {
+  const k = rkey(url);
+  await refreshOpenTabs();
+  const tab = openTabs.get(k);
+  if (tab) {
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url, active: true });
+  }
+}
+async function setRecent(list) { await chrome.storage.local.set({ [STORAGE.recent]: list }); }
+
 function renderKeywords() {
   const kws = keywordStats(links, S.kwSource, 20);
   const max = kws[0]?.n || 1;
@@ -297,13 +353,13 @@ function render() {
   app.innerHTML = `
     <header class="pl-panel__head pl-panel__head--tabs">
       <nav class="pl-tabs pl-tabs--inline" role="tablist">
-        ${[['links', '수집 링크', links.length], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
+        ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
       </nav>
       <button type="button" class="pl-icon-btn pl-icon-btn--sm pl-u-push" data-act="options" aria-label="설정" data-tip="설정" data-tip-pos="below" data-tip-align="end">${icon('sliders')}</button>
     </header>
-    ${S.tab === 'links' ? renderLinks() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
+    ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-  else if (refocus === 'q') { const el = app.querySelector('#q'); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
+  else if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
 }
 
 // ------------------------------------------------------------------ actions
@@ -397,7 +453,11 @@ app.addEventListener('click', async (e) => {
   if (!t) return;
   const act = t.dataset.act, id = t.dataset.id, val = t.dataset.val;
   switch (act) {
-    case 'tab': S.tab = val; break;
+    case 'tab': S.tab = val; if (val === 'recent') { await refreshOpenTabs(); send({ type: 'pl:recentSeed' }); } break;
+    case 'rsort': S.rsort = val; break;
+    case 'rGo': await goRecent(val); return;
+    case 'rDel': await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val))); return;
+    case 'rAdd': { const r = recent.find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
     case 'platform': S.platform = val; break;
     case 'kind': S.kind = val; break;
     case 'view': S.view = val; setSettings({ sidepanel: { view: val } }); break;
@@ -431,6 +491,7 @@ app.addEventListener('click', async (e) => {
 
 app.addEventListener('input', (e) => {
   if (e.target.id === 'q') { S.q = e.target.value; render(); }
+  if (e.target.id === 'rq') { S.rq = e.target.value; render(); }
   if (e.target.dataset.memoInput) S.draft = e.target.value;
 });
 app.addEventListener('change', async (e) => {
@@ -448,15 +509,24 @@ app.addEventListener('keydown', async (e) => {
 chrome.storage.onChanged.addListener(async (ch, area) => {
   if (area === 'local' && ch[STORAGE.links]) { links = ch[STORAGE.links].newValue || []; const ids = new Set(links.map((l) => l.id)); [...S.sel].forEach((i) => ids.has(i) || S.sel.delete(i)); render(); kickEnrich(); }
   if (area === 'local' && ch[STORAGE.apiKey]) { hasKey = !!ch[STORAGE.apiKey].newValue; render(); kickEnrich(); }
+  if (area === 'local' && ch[STORAGE.recent]) { recent = ch[STORAGE.recent].newValue || []; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
   if (area === 'local' && ch.pl_watchCheckedAt) watchCheckedAt = ch.pl_watchCheckedAt.newValue;
   if (area === 'sync' && ch[STORAGE.settings]) settings = await getSettings();
 });
 
+// keep the 'open' badges current while the recent tab is showing
+let tabsTimer = 0;
+const onTabsChange = () => { if (S.tab !== 'recent') return; clearTimeout(tabsTimer); tabsTimer = setTimeout(async () => { await refreshOpenTabs(); render(); }, 150); };
+chrome.tabs.onRemoved.addListener(onTabsChange);
+chrome.tabs.onCreated.addListener(onTabsChange);
+chrome.tabs.onUpdated.addListener((id, info) => { if (info.url || info.status === 'complete') onTabsChange(); });
+
 (async function init() {
   settings = await getSettings();
   S.view = settings.sidepanel?.view || 'list';
   [links, watch] = await Promise.all([getLinks(), getWatch()]);
+  recent = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
   ({ pl_watchCheckedAt: watchCheckedAt } = await chrome.storage.local.get('pl_watchCheckedAt'));
   render();                       // screen first
   hasKey = !!(await getApiKey());  // then details, asynchronously
