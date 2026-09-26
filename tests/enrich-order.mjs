@@ -10,7 +10,7 @@ const id = sw.url().split('/')[2];
 await sw.evaluate(async () => { const t = (i) => new Date(Date.now() - i * 60000).toISOString();
   await chrome.storage.local.set({ pl_ytApiKey: 'K', pl_links: Array.from({ length: 45 }, (_, i) => ({ id: 'v' + i, url: 'https://www.youtube.com/watch?v=VID' + String(i).padStart(8, '0'), title: 't' + i, platform: 'yt', kind: 'post', ids: { videoId: 'VID' + String(i).padStart(8, '0') }, createdAt: t(i) })) }); });
 const sp = await ctx.newPage(); await sp.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`); await sp.waitForTimeout(2500);
-const shown = await sp.$$eval('.pl-row-item a[href]', (as) => [...new Set(as.map(a => a.href.split('v=')[1]))].slice(0, 3));
+const shown = await sp.$$eval('.pl-lrow a[href]', (as) => [...new Set(as.map(a => a.href.split('v=')[1]))].slice(0, 3));
 console.log('screen top 3:', shown.join(','));
 console.log('API batches:', calls.map(c => c.split(',')[0] + '…' + c.split(',').pop() + ' (' + c.split(',').length + ')').join(' | '));
 await ctx.close(); process.exit(0);

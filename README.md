@@ -2,7 +2,7 @@
 
 드래그 한 번으로 링크를 모으고, 유튜브·틱톡·인스타그램·X·블로그 링크를 카드·표로 정리하는 크리에이터용 크롬 확장 프로그램입니다.
 
-현재 버전: **2.1.2** · 변경 내역은 [CHANGELOG.md](CHANGELOG.md)
+현재 버전: **2.2.0** · 변경 내역은 [CHANGELOG.md](CHANGELOG.md)
 
 ## 설치
 
@@ -45,7 +45,9 @@
 | `src/popup/` · `src/sidepanel/` · `src/options/` | 팝업 · 사이드바 · 설정 화면 |
 | `src/offscreen/` | 클립보드 쓰기용 오프스크린 문서 |
 | `src/ui/pl.css` | 디자인 시스템 (토큰 → 컴포넌트 → 유틸리티) |
-| `src/ui/ui.js` | 아이콘·토스트·클립보드 공통 함수 |
+| `src/ui/ui.js` | 아이콘·로고·채널 아바타·토스트·클립보드 공통 함수 |
+| `src/ui/theme.js` | 밝은/어두운/기기 테마 적용 (모든 화면 공통) |
+| `design/graphite/` | UI 디자인 원본 보드 |
 | `native-host/` | 다른 크롬 프로필 연동 도우미 (네이티브 메시징 호스트 + install/uninstall) |
 | `scripts/build.sh`, `scripts/build.ps1` | `dist/`와 설치용 zip 생성 |
 
@@ -74,9 +76,13 @@ git checkout v1.0.0            # 확인 후 돌아오기: git checkout master
 git revert --no-edit v1.0.0..master
 ```
 
-## 디자인 시스템 규칙
+## 디자인 시스템 규칙 ("Graphite", v2.2)
 
-- 색·간격·글자 크기는 `src/ui/pl.css`의 토큰(`--pl-*`)만 사용합니다.
-- 선택 상태는 `aria-pressed` / `aria-selected` / `aria-current`, 그 밖의 상태는 `.is-on` · `.is-selected`로 표시합니다.
-- 의미 색은 `data-tone`, 점수 구간은 `data-level`로 지정합니다.
-- 툴팁은 `data-tip="텍스트"`만 붙이면 됩니다.
+디자인 원본은 `design/graphite/*.dc.html`(보드 13개)입니다.
+
+- 색은 흑·백·회색만 씁니다. 예외는 셋뿐: 유튜브 로고(빨강), 떡상 1.5배 이상(초록 숫자), 열림·온라인 초록 점.
+- 굵기는 500(제목·탭·버튼)과 400(본문)만. 글꼴은 `Roboto, 'Noto Sans KR'`, 숫자는 tabular-nums.
+- 색·간격은 `src/ui/pl.css`의 토큰(`--pl-*`)만 사용합니다. 테마는 `html[data-theme="light"|"dark"]`(`src/ui/theme.js`, 저장 키 `pl_theme`).
+- 선택 상태는 `aria-pressed` / `aria-selected` / `aria-current` / `aria-checked`, 그 밖은 `.is-on` · `.is-selected`.
+- 탭 밑줄은 `border-bottom`으로만 그립니다(`box-shadow: inset`은 배율 화면에서 탭 옆에 세로선이 번짐).
+- 화면을 바꾸면 `node tests/screens.mjs`로 밝은/어두운 × 배율 1·1.25 스크린샷을 찍어 보드와 비교합니다(`tests/screens/`).

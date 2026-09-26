@@ -76,7 +76,7 @@ await pop.close();
 const sp = await ctx.newPage(); sp.on('pageerror', e => errors.push('side: ' + e.message)); sp.on('console', m => m.type()==='error' && !m.text().includes('ERR_TUNNEL') && errors.push('side: ' + m.text()));
 await sp.setViewportSize({ width: 380, height: 760 });
 await sp.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`); await sp.waitForTimeout(700);
-ok('사이드바 하단 메뉴(선택 없음) 표시', (await sp.locator('.pl-toolbar').count()) === 1, await sp.locator('.pl-toolbar__count').innerText());
+ok('사이드바 하단 메뉴(선택 없음) 표시', (await sp.locator('.pl-bar').count()) === 1, await sp.locator('.pl-bar__count').innerText());
 // Chrome 153+: 비활성 탭의 clipboard.readText()는 빈 문자열을 반환 → 읽기 전에 page 탭을 활성화
 const clipViaFront = async () => { await page.bringToFront(); await page.waitForTimeout(250); const v = await clip(); await sp.bringToFront(); await page.waitForTimeout(150); return v; };
 await setClip('EMPTY');
@@ -84,7 +84,7 @@ await sp.click('[data-act="bCopy"]'); await sp.waitForTimeout(1200);
 c = await clipViaFront();
 ok('사이드바 복사(전체)', c !== 'EMPTY' && c.includes('https://'), await lastToast(sp));
 await sp.click('[data-act="sel"] >> nth=0'); await sp.click('[data-act="sel"] >> nth=1'); await sp.waitForTimeout(200);
-ok('선택 시 개수 표시', (await sp.locator('.pl-toolbar__count').innerText()).includes('2'));
+ok('선택 시 개수 표시', (await sp.locator('.pl-bar__count').innerText()).includes('2'));
 await setClip('EMPTY');
 await sp.click('[data-act="bCopy"]'); await sp.waitForTimeout(1200);
 c = await clipViaFront(); ok('사이드바 복사(선택 2개)', c !== 'EMPTY' && (c.match(/https?:\/\//g) || []).length === 2, JSON.stringify(c.slice(0, 60)));

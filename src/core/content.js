@@ -39,29 +39,30 @@
   let host = null, root = null, layer = null, svg = null, pathEl = null, boxEl = null, pill = null, hlLayer = null, toastWrap = null;
   const CSS = `
     :host { all: initial; }
-    * { box-sizing: border-box; font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif; }
+    * { box-sizing: border-box; font-family: Roboto, 'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif; }
     .layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
     svg.draw { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
     .box { position: absolute; border: 2px dashed var(--tone); border-radius: 6px; background: color-mix(in srgb, var(--tone) 7%, transparent); display: none; }
     svg.draw path { fill: color-mix(in srgb, var(--tone) 6%, transparent); stroke: var(--tone); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; stroke-linecap: round; }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
-    .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: #101828; color: #fff; border-radius: 12px; box-shadow: 0 16px 32px -10px rgba(16,24,40,.45); white-space: nowrap; }
-    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; background: var(--tone); font: 600 14px ui-monospace, 'SF Mono', Consolas, monospace; }
-    .pill .t { font-size: 13px; font-weight: 600; }
-    .pill .s { font-size: 11px; color: #98A2B3; }
+    .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); white-space: nowrap; }
+    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; background: #272727; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .pill .t { font-size: 13px; font-weight: 500; }
+    .pill .s { font-size: 11px; color: #AAAAAA; }
     .toasts { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2147483647; }
-    .toast { pointer-events: auto; width: 360px; padding: 14px; border-radius: 14px; background: #101828; color: #fff; box-shadow: 0 20px 44px -12px rgba(16,24,40,.5); display: flex; flex-direction: column; gap: 10px; animation: in .22s cubic-bezier(.2,.8,.2,1); }
+    .toast { pointer-events: auto; width: 360px; padding: 14px; border-radius: 12px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 10px; animation: in .22s cubic-bezier(.2,.8,.2,1); }
     .toast.out { animation: out .18s ease forwards; }
     .head { display: flex; gap: 10px; align-items: flex-start; }
-    .ic { width: 28px; height: 28px; border-radius: 8px; background: var(--tone); display: grid; place-items: center; flex-shrink: 0; }
-    .ic svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    .tt { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
-    .ts { font-size: 12px; color: #98A2B3; margin-top: 2px; }
-    .list { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 9px; background: rgba(255,255,255,.06); }
-    .list span { font-size: 11.5px; color: #D0D5DD; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ic { width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; background: #16A34A; display: grid; place-items: center; flex-shrink: 0; }
+    .toast.err .ic { background: #DC2626; }
+    .ic svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .tt { font-size: 13px; font-weight: 500; line-height: 1.45; }
+    .ts { font-size: 12px; color: #AAAAAA; margin-top: 2px; }
+    .list { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #1F1F1F; }
+    .list span { font-size: 12px; color: #D0D0D0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .acts { display: flex; gap: 8px; justify-content: flex-end; }
-    button { height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #344054; background: transparent; color: #D0D5DD; }
-    button.pri { background: #fff; color: #101828; border-color: #fff; }
+    button { height: 30px; padding: 0 14px; border-radius: 15px; font-size: 12px; font-weight: 500; cursor: pointer; border: 0; background: #272727; color: #F1F1F1; }
+    button.pri { background: #F1F1F1; color: #0F0F0F; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes out { to { opacity: 0; transform: translateY(6px); } }`;
 
@@ -325,7 +326,7 @@
     if (settings.notify === false && !DEMO) return;
     ensureOverlay();
     const el = document.createElement('div');
-    el.className = 'toast';
+    el.className = error ? 'toast err' : 'toast';
     el.style.setProperty('--tone', tone || '#2F6BFF');
     const esc = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     el.innerHTML = `<div class="head"><span class="ic"><svg viewBox="0 0 24 24"><path d="${error ? 'M6 6l12 12M18 6 6 18' : 'm5 12 5 5 9-10'}"></path></svg></span><div><div class="tt">${esc(title)}</div>${sub ? `<div class="ts">${esc(sub)}</div>` : ''}</div></div>` +

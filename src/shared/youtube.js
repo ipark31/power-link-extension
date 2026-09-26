@@ -116,7 +116,7 @@ async function channelInfo(ids, key) {
         avatar: c.snippet?.thumbnails?.default?.url || '',
         created: c.snippet?.publishedAt || '',
         followers: c.statistics?.hiddenSubscriberCount ? null : +c.statistics?.subscriberCount || 0,
-        total, longCount, shortCount, recent30,
+        total, longCount, shortCount, recent30, views,
         avgViews: total ? Math.round(views / total) : null
       };
       info.power = computeChannelPower(info);

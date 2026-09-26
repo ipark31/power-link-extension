@@ -2,6 +2,7 @@ node_modules/
 dist/
 release/
 thumbs-test.zip
+tests/screens/
 .vscode/
 test-results/
 *.txt

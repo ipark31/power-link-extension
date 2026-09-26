@@ -90,13 +90,13 @@ try {
   await spB.setViewportSize({ width: 380, height: 700 });
   await spB.goto(`chrome-extension://${extId}/src/sidepanel/sidepanel.html`); await wait(600);
   await spB.click('[data-act="tab"][data-val="recent"]'); await wait(800);
-  ok('다른 프로필 배지 표시', (await spB.locator('.pl-recent .pl-badge', { hasText: '업무용' }).count()) >= 2);
+  ok('다른 프로필 배지 표시', (await spB.locator('.pl-recent .pl-ptag', { hasText: '업무용' }).count()) >= 2);
   await spB.fill('#rq', 'alpha'); await wait(300);
   ok('다른 프로필 항목 검색', (await spB.locator('.pl-recent__title').count()) === 1 && ((await spB.locator('.pl-recent__title').first().textContent()) || '').includes('alpha'));
   await spB.fill('#rq', '업무용'); await wait(300);
   ok('프로필 이름으로 검색', (await spB.locator('.pl-recent').count()) >= 2);
   await spB.fill('#rq', ''); await wait(300);
-  ok('다른 프로필 유튜브 썸네일', await until(async () => (await spA.locator('.pl-recent:has(.pl-badge:text("개인용")) .pl-recent__thumb').count()) >= 1, 5000));
+  ok('다른 프로필 유튜브 썸네일', await until(async () => (await spA.locator('.pl-recent', { has: spA.locator('.pl-ptag', { hasText: '개인용' }) }).locator('.pl-recent__thumb').count()) >= 1, 5000));
 
   // 5) 이동: B에서 A의 열린 탭 클릭 → A의 그 탭이 활성화
   await spB.click('[data-act="rGo"][data-val="http://localhost:8773/alpha"][data-pid]');

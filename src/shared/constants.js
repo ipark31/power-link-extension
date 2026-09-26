@@ -72,6 +72,7 @@ export const DEFAULT_SETTINGS = {
   bgTabs: true,
   confirmOver: 20,
   recentMax: 50,               // 최근 작업 화면 기록 수
+  outlierHighlight: true,      // 떡상 점수 1.5배 이상을 초록색으로 강조
   notify: true,
   memoExport: true,
   memoSearch: true,

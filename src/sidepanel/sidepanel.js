@@ -1,50 +1,56 @@
 // Power Link — side panel (collected links, recent screens, keywords, watchlist)
+// Layout follows design/graphite (Main / List / Detail / Recent boards).
 import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
-import { icon, version, send, toast, writeClipboard } from '../ui/ui.js';
+import { icon, logo, ytLogo, avatar, version, send, toast, writeClipboard } from '../ui/ui.js';
+import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
 import { makeZip, safeFileName } from '../shared/zip.js';
 
 const app = document.getElementById('app');
 const S = {
   tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
   sel: new Set(), open: new Set(), allOpen: false, editing: null, draft: '',
-  rq: '', rsort: 'new'
+  rq: '', rsort: 'new', rprof: 'all'
 };
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
 let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
 let recentOthers = { profiles: [] }, bridge = null; // other Chrome profiles (native messaging helper)
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
+const KINDS = [['all', '종류'], ['post', '게시물·영상'], ['account', '채널·계정']];
 const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['title', '제목순']];
+const BAR_ACTIONS = [
+  ['bCopy', 'copy', '복사'], ['bOpen', 'external', '새 탭으로 열기'], ['bThumbs', 'image', '썸네일 압축 저장'],
+  ['bWatch', 'eye', '워치리스트에 추가'], ['bBookmark', 'bookmark', '북마크에 추가'], ['bExcel', 'download', '엑셀 다운로드'],
+  ['bDelete', 'trash', '목록에서 삭제']
+];
 
 // ------------------------------------------------------------------ derived data
 const P = (it) => PLATFORMS[it.platform] || PLATFORMS.web;
-function metricsOf(it) {
+const isYt = (it) => it.platform === 'yt';
+const hot = (it) => settings.outlierHighlight !== false && it.outlier != null && it.outlier >= 1.5;
+const titleHtml = (it, lg) => (isYt(it) ? ytLogo(lg) : '') + esc(it.title || it.url);
+const chanName = (it) => it.account?.name || it.domain || '';
+const bgImg = (url) => (url ? ` style="background-image:url('${esc(url)}')"` : '');
+function statLine(it) {
+  if (it.kind === 'account') {
+    const a = it.account || {};
+    return [a.followers != null ? `${P(it).follower || '팔로워'} ${compactKo(a.followers)}` : '', a.total != null ? `영상 ${compactKo(a.total)}` : ''].filter(Boolean).join(' · ') || it.domain;
+  }
   const d = it.detail || {};
-  const out = [];
-  if (d.views != null) out.push(['조회', compactKo(d.views)]);
-  if (d.likes != null) out.push([it.platform === 'blog' ? '공감' : '좋아요', compactKo(d.likes)]);
-  if (d.comments != null) out.push(['댓글', compactKo(d.comments)]);
-  return out;
+  return [d.views != null ? `조회 ${compactKo(d.views)}` : '', timeAgo(d.uploadedAt || it.createdAt)].filter(Boolean).join(' · ');
 }
-function keyMetric(it) {
-  if (it.kind === 'account') return it.account?.followers != null ? [P(it).follower, compactKo(it.account.followers)] : ['', ''];
-  const m = metricsOf(it)[0];
-  return m || ['', ''];
-}
-function accountDetails(it) {
-  const a = it.account;
-  if (!a) return [];
-  const rows = [
-    ['개설일', fmtDate(a.created)], [P(it).follower || '팔로워', a.followers != null ? compactKo(a.followers) : '비공개'],
-    ['전체 영상', a.total != null ? compactKo(a.total) : ''], ['롱폼 / 쇼츠', a.longCount != null || a.shortCount != null ? `${a.longCount ?? '-'} / ${a.shortCount ?? '-'}` : ''],
-    ['최근 30일', a.recent30 != null ? a.recent30 + '개' : ''], ['평균 조회', a.avgViews != null ? compactKo(a.avgViews) : '']
+function accountStats(a) {
+  return [
+    ['개설일', fmtDate(a.created) || '-'], ['전체 영상', a.total != null ? compactKo(a.total) : '-'],
+    ['롱폼 / 쇼츠', a.longCount != null || a.shortCount != null ? `${a.longCount ?? '-'} / ${a.shortCount ?? '-'}` : '-'],
+    ['최근 30일', a.recent30 != null ? a.recent30 + '개' : '-'], ['평균 조회', a.avgViews != null ? compactKo(a.avgViews) : '-'],
+    ['총 조회수', a.views != null ? compactKo(a.views) : '-']
   ];
-  return rows.filter((r) => r[1] !== '');
 }
-const powerLevel = (p) => (p >= 8 ? 'high' : p >= 5 ? 'mid' : 'low');
+const canFetch = (it) => isYt(it) && ((it.kind === 'post' && it.ids?.videoId) || (it.kind === 'account' && (it.ids?.channelId || it.ids?.handle)));
 
 function filtered() {
   const q = S.q.trim().toLowerCase();
@@ -61,134 +67,120 @@ function filtered() {
 }
 
 // ------------------------------------------------------------------ render pieces
-const memoIcon = icon('memo', 'pl-i--sm');
-function memoEditor(it, compact) {
+function memoEditor(it) {
   return `<div class="pl-memo-editor">
-    <input type="text" class="pl-input pl-input--sm pl-input--focus" data-memo-input="${it.id}" value="${esc(S.draft)}" placeholder="메모를 입력하고 Enter" aria-label="메모">
-    ${compact ? '' : `<button type="button" class="pl-btn pl-btn--primary pl-btn--sm" data-act="memoSave" data-id="${it.id}">저장</button><button type="button" class="pl-btn pl-btn--soft pl-btn--sm" data-act="memoCancel">취소</button>`}
+    <input type="text" class="pl-input pl-input--sm" data-memo-input="${it.id}" value="${esc(S.draft)}" placeholder="메모를 입력하고 Enter" aria-label="메모">
+    <button type="button" class="pl-btn pl-btn--ink pl-btn--sm" data-act="memoSave" data-id="${it.id}">저장</button>
+    <button type="button" class="pl-btn pl-btn--sm" data-act="memoCancel">취소</button>
   </div>`;
 }
-const thumbStyle = (it) => (it.thumb ? `background:var(--pl-gray-150) url('${esc(it.thumb)}') center/cover no-repeat;` : 'background:var(--pl-gray-150);');
-const avatarStyle = (url) => (url ? `background:var(--pl-gray-300) url('${esc(url)}') center/cover no-repeat;` : '');
+const memoBtn = (it, cls = '') => `<button type="button" class="pl-memo-btn ${cls} ${it.memo ? 'is-on' : ''}" data-act="memo" data-id="${it.id}" aria-label="메모" title="${it.memo ? esc('메모: ' + it.memo) : '메모 추가'}">${icon('memo', 'pl-i--sm')}</button>`;
+const memoChip = (it, lg) => `<button type="button" class="pl-memo-chip${lg ? ' pl-memo-chip--lg' : ''}" data-act="memo" data-id="${it.id}" title="메모 수정">${icon('memoSm', 'pl-i--xs')}<span>${esc(it.memo)}</span></button>`;
+const check = (it, cls = '') => `<input type="checkbox" class="pl-check ${cls}" data-act="sel" data-id="${it.id}" ${S.sel.has(it.id) ? 'checked' : ''} aria-label="선택">`;
+const dur = (it) => (it.detail?.duration ? `<span class="pl-dur">${fmtDuration(it.detail.duration)}</span>` : '');
+const hotTag = (it) => (hot(it) ? `<span class="pl-up" title="채널 평균 대비 조회수">×${it.outlier}</span>` : '');
+// thumbnail box content: video/post image, or a centered avatar for channels / sites without an image
+function thumbInner(it, avCls) {
+  if (it.kind === 'account') return avatar(it.account?.name || it.title, it.account?.avatar || it.thumb, avCls);
+  return it.thumb ? '' : avatar(it.domain || it.title, '', avCls);
+}
+const thumbBg = (it) => (it.kind === 'account' ? '' : bgImg(it.thumb));
+
+function tile(it) {
+  const acc = it.kind === 'account';
+  return `<div class="pl-tile ${S.sel.has(it.id) ? 'is-selected' : ''}">
+    <div class="pl-tile__thumb ${acc ? 'pl-tile__thumb--ch' : ''}"${thumbBg(it)}>
+      ${thumbInner(it, 'pl-av--xl')}
+      ${check(it, 'pl-tile__check')}
+      ${acc ? '' : dur(it)}
+    </div>
+    <a class="pl-tile__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it)}</a>
+    <div class="pl-tile__meta">
+      <span class="pl-chan">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(acc ? (it.ids?.handle || it.domain) : chanName(it))}${it.category ? ' · ' + esc(it.category) : ''}</span></span>
+      <div class="pl-tile__stat"><span class="pl-trunc">${esc(statLine(it))}</span>${hotTag(it)}${memoBtn(it)}</div>
+    </div>
+    ${S.editing === it.id ? memoEditor(it) : ''}
+  </div>`;
+}
 
 function rowList(it) {
-  const sel = S.sel.has(it.id), editing = S.editing === it.id;
-  const [kl, kv] = keyMetric(it);
-  const isAcc = it.kind === 'account';
-  const mini = isAcc ? 'pl-thumb--mini-round' : it.detail?.isShort || it.ids?.isShort ? 'pl-thumb--mini-tall' : 'pl-thumb--mini';
-  const sub = isAcc ? it.ids?.handle || it.domain : (it.account?.name || it.domain) + ' · ' + timeAgo(it.detail?.uploadedAt || it.createdAt);
-  return `<div class="pl-row-item ${sel ? 'is-selected' : ''}">
-    <div class="pl-row-item__line">
-      <input type="checkbox" class="pl-checkbox" data-act="sel" data-id="${it.id}" ${sel ? 'checked' : ''} aria-label="선택">
-      <span class="pl-thumb ${mini}" style="${thumbStyle(it)}"></span>
-      <div class="pl-u-grow" style="display:flex;flex-direction:column;gap:1px;">
-        <a class="pl-item__title pl-u-truncate" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title || it.url)}</a>
-        <span class="pl-meta pl-u-muted" style="font-size:var(--pl-fs-xs);">
-          <span class="pl-dot pl-dot--sm" data-tone="${it.platform}"></span>${esc(P(it).short)}${it.category ? ` · <span class="pl-category">${esc(it.category)}</span>` : ''} ·
-          ${it.memo && !editing ? `<span class="pl-memo-inline pl-u-truncate">메모: ${esc(it.memo)}</span>` : `<span class="pl-u-truncate">${esc(sub)}</span>`}
-        </span>
-      </div>
-      ${kv ? `<span class="pl-row-item__key"><b>${esc(kv)}</b><small>${esc(kl)}</small></span>` : ''}
-      ${it.outlier ? `<span class="pl-outlier pl-outlier--inline" data-level="${it.outlier >= 5 ? 'hot' : 'warm'}">×${it.outlier}</span>` : ''}
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm pl-icon-btn--memo ${it.memo ? 'is-on' : ''}" data-act="memo" data-id="${it.id}" aria-label="메모" data-tip="메모" data-tip-align="end">${memoIcon}</button>
+  const acc = it.kind === 'account';
+  const meta = acc ? statLine(it) : [chanName(it), statLine(it)].filter(Boolean).join(' · ');
+  return `<div class="pl-lrow ${S.sel.has(it.id) ? 'is-selected' : ''}">
+    ${check(it)}
+    <div class="pl-lthumb ${acc ? 'pl-lthumb--ch' : ''}"${thumbBg(it)}>${thumbInner(it, 'pl-av--lg')}${acc ? '' : dur(it)}</div>
+    <div class="pl-lrow__body">
+      <a class="pl-lrow__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it)}</a>
+      <span class="pl-lrow__meta">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(meta)}${it.category ? ' · ' + esc(it.category) : ''}</span>${hotTag(it)}</span>
+      ${S.editing === it.id ? `<div class="pl-lrow__edit">${memoEditor(it)}</div>` : it.memo ? memoChip(it) : ''}
     </div>
-    ${editing ? `<div class="pl-row-item__edit">${memoEditor(it)}</div>` : ''}
+    ${memoBtn(it, 'pl-memo-btn--md')}
   </div>`;
+}
+
+// Status box for YouTube items whose details are not in yet (fetched automatically).
+function infoBox(it, open) {
+  const chev = `<button type="button" class="pl-ibtn pl-ibtn--sm" data-act="expand" data-id="${it.id}" aria-label="${open ? '접기' : '펼치기'}" aria-expanded="${open}">${icon(open ? 'chevronUp' : 'chevron', 'pl-i--md')}</button>`;
+  let msg;
+  if (!canFetch(it)) msg = isYt(it) ? '채널·계정 정보 없음' : `${esc(it.domain || '')} · 채널·계정 정보는 유튜브만 가져와요`;
+  else if (!hasKey) msg = '설정에서 YouTube API 키를 넣으면 정보가 자동으로 채워져요';
+  else if (it.enrichTriedAt && !it.enrichedAt) msg = '유튜브 정보를 찾지 못했어요';
+  else msg = '<span class="pl-spinner" aria-hidden="true"></span>유튜브 정보 불러오는 중…';
+  return `<div class="pl-loading pl-drow__in"><span class="pl-grow" style="display:flex;align-items:center;gap:8px;">${msg}</span>${chev}</div>`;
 }
 
 function rowDetail(it) {
-  const sel = S.sel.has(it.id), editing = S.editing === it.id, open = S.allOpen || S.open.has(it.id);
+  const open = S.allOpen || S.open.has(it.id);
+  const acc = it.kind === 'account';
   const a = it.account;
-  const isAcc = it.kind === 'account';
-  const tall = it.detail?.isShort || it.ids?.isShort;
-  const tag = it.detail?.isShort ? (it.platform === 'yt' ? '쇼츠' : '') : it.ids?.postType === '릴스' ? '릴스' : '';
-  const details = accountDetails(it);
-  const head = isAcc ? `
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span class="pl-avatar pl-avatar--xl" style="${avatarStyle(it.thumb)}"></span>
-      <div style="min-width:0;display:flex;flex-direction:column;gap:2px;">
-        <span class="pl-meta"><a class="pl-u-strong pl-u-truncate" style="font-size:13px;" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title || it.url)}</a><span class="pl-platform"><span class="pl-dot pl-dot--sm" data-tone="${it.platform}"></span>${esc(P(it).short)}</span></span>
-        <span class="pl-u-muted pl-u-truncate" style="font-size:11px;">${esc(a?.handle || it.ids?.handle || it.domain)}${a?.followers != null ? ` · ${P(it).follower} ${compactKo(a.followers)}` : ''}${it.category ? ` · <span class="pl-category">${esc(it.category)}</span>` : ''}</span>
-      </div>
-      <span class="pl-badge pl-u-push" data-tone="violet">${esc(P(it).account)}</span>
-    </div>` : `
-    <div style="display:flex;gap:10px;">
-      <a class="pl-thumb ${tall ? 'pl-thumb--tall' : 'pl-thumb--wide'}" style="${thumbStyle(it)}" href="${esc(it.url)}" target="_blank" rel="noopener">${it.detail?.duration ? `<span class="pl-thumb__len">${fmtDuration(it.detail.duration)}</span>` : ''}</a>
-      <div style="min-width:0;display:flex;flex-direction:column;gap:4px;">
-        <span class="pl-meta">
-          <span class="pl-platform"><span class="pl-dot pl-dot--sm" data-tone="${it.platform}"></span>${esc(P(it).short)}</span>
-          ${tag ? `<span class="pl-badge pl-badge--sq" data-tone="orange">${tag}</span>` : ''}
-          ${it.category ? `<span class="pl-badge pl-badge--sq" data-tone="violet">${esc(it.category)}</span>` : ''}
-          <span>${esc(it.detail?.uploadedAt ? timeAgo(it.detail.uploadedAt) : '수집 ' + timeAgo(it.createdAt))}</span>
-        </span>
-        <a class="pl-item__title pl-u-clamp-2" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title || it.url)}</a>
-        <div class="pl-metrics">${metricsOf(it).map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join('') || `<span class="pl-u-faint">${esc(it.domain)}</span>`}</div>
-      </div>
-      ${it.outlier ? `<span class="pl-outlier pl-u-push" data-level="${it.outlier >= 5 ? 'hot' : 'warm'}" title="채널 평균 조회수 대비" style="align-self:flex-start;"><b class="pl-outlier__value">×${it.outlier}</b><span class="pl-outlier__label">떡상</span></span>` : ''}
-    </div>`;
-  const strip = a ? `
-    <div class="pl-strip">
-      <span class="pl-avatar pl-avatar--xs" style="${avatarStyle(a.avatar)}"></span>
-      <span class="pl-strip__name pl-u-truncate">${esc(a.name || '')}</span>
-      ${a.followers != null ? `<span class="pl-strip__sub">${P(it).follower} ${compactKo(a.followers)}</span>` : ''}
-      ${a.power != null ? `<span class="pl-power pl-u-push" data-level="${powerLevel(a.power)}" title="채널력(베타): 현재 임의 점수"><span class="pl-power__label">채널력</span><b class="pl-power__value">${a.power}</b></span>` : '<span class="pl-u-push"></span>'}
-      <button type="button" class="pl-icon-btn pl-icon-btn--xs ${open ? 'is-on' : ''}" data-act="expand" data-id="${it.id}" aria-label="채널 정보 펼치기" data-tip="채널 정보" data-tip-align="end">${icon('chevron', 'pl-i--sm pl-chevron')}</button>
-    </div>` : `
-    <div class="pl-strip">
-      <span class="pl-strip__sub pl-u-grow">${ytState(it)}</span>
-      <button type="button" class="pl-icon-btn pl-icon-btn--xs ${open ? 'is-on' : ''}" data-act="expand" data-id="${it.id}" aria-label="펼치기" data-tip="펼치기" data-tip-align="end">${icon('chevron', 'pl-i--sm pl-chevron')}</button>
-    </div>`;
-  const memo = editing ? memoEditor(it)
-    : it.memo ? `<button type="button" class="pl-memo" data-act="memo" data-id="${it.id}" title="메모 수정">${memoIcon}<span>${esc(it.memo)}</span></button>`
-    : `<button type="button" class="pl-btn pl-btn--xs pl-btn--dashed" data-act="memo" data-id="${it.id}" style="align-self:flex-start;background:transparent;">${memoIcon}메모 추가</button>`;
+  const d = it.detail || {};
+  const metrics = [];
+  if (d.views != null) metrics.push(['조회', compactKo(d.views)]);
+  if (d.likes != null) metrics.push([it.platform === 'blog' ? '공감' : '좋아요', compactKo(d.likes)]);
+  if (d.comments != null) metrics.push(['댓글', compactKo(d.comments)]);
+  const when = acc ? (a?.handle || it.ids?.handle || it.domain) : d.uploadedAt ? timeAgo(d.uploadedAt) : '수집 ' + timeAgo(it.createdAt);
   const cats = settings.categories || [];
-  const openBody = open ? `
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      ${details.length ? `<div class="pl-stats">${details.map(([k, v]) => `<div class="pl-stat"><span class="pl-stat__k">${k}</span><span class="pl-stat__v">${esc(v)}</span></div>`).join('')}</div>` : ''}
-      <div class="pl-head" style="gap:6px;flex-wrap:wrap;">
-        <select class="pl-select pl-select--inline" data-act="cat" data-id="${it.id}" aria-label="카테고리">
-          <option value="">카테고리 없음</option>${cats.map((c) => `<option ${c === it.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-          ${it.category && !cats.includes(it.category) ? `<option selected>${esc(it.category)}</option>` : ''}
-        </select>
-        ${a || isAcc ? `<button type="button" class="pl-btn pl-btn--sm" data-act="watchOne" data-id="${it.id}">${icon('eye', 'pl-i--sm')}워치리스트 추가</button>` : ''}
-        ${a?.accountUrl ? `<a class="pl-btn pl-btn--sm pl-u-push" href="${esc(a.accountUrl)}" target="_blank" rel="noopener">${esc(P(it).openAccount)}${icon('external', 'pl-i--xs')}</a>` : ''}
+  const chev = `<button type="button" class="pl-ibtn pl-ibtn--sm" data-act="expand" data-id="${it.id}" aria-label="${open ? '채널 정보 접기' : '채널 정보 펼치기'}" aria-expanded="${open}">${icon(open ? 'chevronUp' : 'chevron', 'pl-i--md')}</button>`;
+  const chbox = a ? `
+    <div class="pl-chbox pl-drow__in">
+      <div class="pl-chbox__head">
+        ${avatar(a.name || it.title, a.avatar, 'pl-av--md')}
+        <span class="pl-chbox__name">${esc(a.name || '')}</span>
+        ${a.followers != null ? `<span class="pl-chbox__sub">${esc(P(it).follower || '구독자')} ${compactKo(a.followers)}</span>` : ''}
+        <span class="pl-grow"></span>
+        ${a.power != null ? `<span class="pl-chbox__sub" title="채널력(베타): 현재 임의 점수">채널력 <b>${a.power}</b></span>` : ''}
+        ${chev}
       </div>
-      <span class="pl-caption">${esc(it.url)}</span>
+      ${open ? `<div class="pl-chbox__grid">${accountStats(a).map(([k, v]) => `<div class="pl-chbox__cell"><span class="pl-chbox__k">${k}</span><span class="pl-chbox__v">${esc(v)}</span></div>`).join('')}</div>` : ''}
+    </div>` : infoBox(it, open);
+  const acts = open ? `
+    <div class="pl-drow__acts pl-drow__in">
+      <label class="pl-catsel"><select data-act="cat" data-id="${it.id}" aria-label="카테고리">
+        <option value="">카테고리 없음</option>${cats.map((c) => `<option ${c === it.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        ${it.category && !cats.includes(it.category) ? `<option selected>${esc(it.category)}</option>` : ''}
+      </select>${icon('chevron', 'pl-i--xs')}</label>
+      ${a || acc ? `<button type="button" class="pl-chip" data-act="watchOne" data-id="${it.id}">${icon('eye', 'pl-i--sm')}워치리스트</button>` : ''}
+      ${a?.accountUrl ? `<a class="pl-chip" href="${esc(a.accountUrl)}" target="_blank" rel="noopener">${icon('external', 'pl-i--sm')}${esc(P(it).openAccount)}</a>` : ''}
+      ${it.memo ? '' : `<button type="button" class="pl-chip" data-act="memo" data-id="${it.id}">${icon('memoSm', 'pl-i--sm')}메모 추가</button>`}
     </div>` : '';
-  return `<div class="pl-item ${sel ? 'is-selected' : ''}">
-    <input type="checkbox" class="pl-checkbox" data-act="sel" data-id="${it.id}" ${sel ? 'checked' : ''} aria-label="선택" style="margin-top:3px;">
-    <div class="pl-item__body">${head}${strip}${memo}${openBody}</div>
-  </div>`;
-}
-
-function tile(it) {
-  const sel = S.sel.has(it.id), editing = S.editing === it.id;
-  const isAcc = it.kind === 'account';
-  const [, kv] = keyMetric(it);
-  return `<div class="pl-tile ${sel ? 'is-selected' : ''}">
-    <div class="pl-thumb pl-thumb--tile" style="${isAcc ? 'background:var(--pl-surface-3);' : thumbStyle(it)}">
-      ${isAcc ? `<span class="pl-avatar pl-avatar--2xl" style="${avatarStyle(it.thumb)}"></span>` : ''}
-      <input type="checkbox" class="pl-checkbox pl-thumb__corner pl-thumb__corner--tl" data-act="sel" data-id="${it.id}" ${sel ? 'checked' : ''} aria-label="선택" style="width:16px;height:16px;">
-      <span class="pl-platform pl-platform--float pl-thumb__corner pl-thumb__corner--tr"><span class="pl-dot pl-dot--sm" data-tone="${it.platform}"></span>${esc(P(it).short)}</span>
-      ${it.outlier ? `<span class="pl-outlier pl-outlier--inline pl-thumb__corner pl-thumb__corner--bl" data-level="${it.outlier >= 5 ? 'hot' : 'warm'}">×${it.outlier} 떡상</span>` : ''}
-      ${it.detail?.duration ? `<span class="pl-thumb__len" style="right:6px;bottom:6px;">${fmtDuration(it.detail.duration)}</span>` : ''}
+  return `<div class="pl-drow ${S.sel.has(it.id) ? 'is-selected' : ''}">
+    <div class="pl-drow__top">
+      ${check(it)}
+      <a class="pl-dthumb ${acc ? 'pl-dthumb--ch' : ''}"${thumbBg(it)} href="${esc(it.url)}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">${thumbInner(it, 'pl-av--xl')}${acc ? '' : dur(it)}</a>
+      <div class="pl-drow__info">
+        <span class="pl-drow__cat">${[it.category, when].filter(Boolean).map(esc).join(' · ')}</span>
+        <a class="pl-drow__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it, true)}</a>
+      </div>
+      ${memoBtn(it, 'pl-memo-btn--md')}
     </div>
-    <a class="pl-tile__title pl-u-clamp-2" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title || it.url)}</a>
-    <div class="pl-head">
-      <span class="pl-u-muted pl-u-truncate pl-u-grow" style="font-size:11px;">${esc(it.account?.name || it.domain)}${it.category ? ` · <span class="pl-category">${esc(it.category)}</span>` : ''}${kv ? ' · ' + esc(kv) : ''}</span>
-      <button type="button" class="pl-icon-btn pl-icon-btn--xs pl-icon-btn--memo ${it.memo ? 'is-on' : ''}" data-act="memo" data-id="${it.id}" aria-label="메모" data-tip="메모" data-tip-align="end">${memoIcon}</button>
-    </div>
-    ${editing ? memoEditor(it, true) : it.memo ? `<button type="button" class="pl-memo pl-memo--compact" data-act="memo" data-id="${it.id}">${esc(it.memo)}</button>` : ''}
+    ${metrics.length || it.outlier != null ? `<div class="pl-drow__stats pl-drow__in">
+      ${metrics.map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join('')}
+      ${it.outlier != null ? `<span class="pl-push ${hot(it) ? 'pl-up' : ''}" title="채널 평균 조회수 대비">평균 대비 ×${it.outlier}</span>` : ''}
+    </div>` : ''}
+    ${chbox}
+    ${acts}
+    ${S.editing === it.id ? `<div class="pl-drow__in">${memoEditor(it)}</div>` : it.memo ? `<div class="pl-drow__in">${memoChip(it, true)}</div>` : ''}
   </div>`;
-}
-
-// Status line for YouTube items whose details are not in yet (fetched automatically).
-function ytState(it) {
-  const canFetch = (it.kind === 'post' && it.ids?.videoId) || (it.kind === 'account' && (it.ids?.channelId || it.ids?.handle));
-  if (it.platform !== 'yt' || !canFetch) return '채널·계정 정보 없음';
-  if (!hasKey) return '설정에서 YouTube API 키를 넣으면 정보가 자동으로 채워져요';
-  if (it.enrichTriedAt && !it.enrichedAt) return '유튜브 정보를 찾지 못했어요';
-  return '<span class="pl-spinner" aria-hidden="true"></span>유튜브 정보 불러오는 중…';
 }
 
 // Ask the background to fetch missing YouTube details for what is on screen,
@@ -203,9 +195,10 @@ function kickEnrich() {
   }, 300);
 }
 
-function emptyState(title, desc) {
-  return `<div class="pl-empty"><div class="pl-empty__icon">${icon('link', 'pl-i--lg')}</div><div class="pl-empty__title">${title}</div><div class="pl-caption">${desc}</div></div>`;
+function emptyState(title, desc, ic = 'link') {
+  return `<div class="pl-empty"><div class="pl-empty__icon">${icon(ic, 'pl-i--lg')}</div><div class="pl-empty__title">${title}</div><div class="pl-caption">${desc}</div></div>`;
 }
+const tsel = (id, list, cur, label) => `<label class="pl-tsel"><select id="${id}" aria-label="${label}">${list.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>${icon('chevron', 'pl-i--sm')}</label>`;
 
 function renderLinks() {
   const list = filtered();
@@ -215,41 +208,34 @@ function renderLinks() {
   const allSel = list.length > 0 && list.every((l) => S.sel.has(l.id));
   const body = !links.length
     ? emptyState('아직 수집한 링크가 없어요', 'Alt + 우클릭 드래그로 링크를 둘러 그리면 여기에 저장돼요. 팝업의 ‘목록에 저장’도 쓸 수 있어요.')
-    : !list.length ? emptyState('조건에 맞는 링크가 없어요', '필터나 검색어를 바꿔 보세요.')
-    : S.view === 'thumb' ? `<div class="pl-tiles">${list.map(tile).join('')}</div>`
+    : !list.length ? emptyState('조건에 맞는 링크가 없어요', '필터나 검색어를 바꿔 보세요.', 'search')
+    : S.view === 'thumb' ? `<div class="pl-grid">${list.map(tile).join('')}</div>`
     : S.view === 'detail' ? list.map(rowDetail).join('')
     : list.map(rowList).join('');
   return `
-  <div class="pl-panel__filters">
-    <label class="pl-input-group">${icon('search', 'pl-i--sm')}<input type="text" id="q" placeholder="제목, 채널·계정, 메모 검색" value="${esc(S.q)}"></label>
-    <div style="display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;">
-      ${PLAT_FILTERS.filter(([id]) => id === 'all' || counts[id]).map(([id, l]) => `<button type="button" class="pl-pill" style="flex:1 0 auto;" aria-pressed="${S.platform === id}" data-act="platform" data-val="${id}"><span class="pl-dot pl-dot--sm" data-tone="${id === 'all' ? 'none' : id}"></span>${l}<span class="pl-pill__count">${counts[id] || 0}</span></button>`).join('')}
+  <div class="pl-filters">
+    <label class="pl-search">${icon('search')}<input type="text" id="q" placeholder="제목, 채널, 메모 검색" value="${esc(S.q)}" aria-label="검색"></label>
+    <div class="pl-frow">
+      <div class="pl-frow__chips">${PLAT_FILTERS.filter(([id]) => id === 'all' || counts[id]).map(([id, l]) => `<button type="button" class="pl-chip" aria-pressed="${S.platform === id}" data-act="platform" data-val="${id}">${id === 'yt' ? icon('play', 'pl-i--sm') : ''}${l}<span class="pl-chip__n">${counts[id] || 0}</span></button>`).join('')}</div>
+      <span class="pl-grow"></span>
+      ${tsel('kind', KINDS, S.kind, '종류')}
+      ${tsel('cat', [['all', '카테고리']].concat(cats.map((c) => [c, c])), S.cat, '카테고리')}
     </div>
-    <div class="pl-head">
-      <div class="pl-seg pl-seg--sm pl-seg--inline">${[['all', '전체'], ['post', '게시물'], ['account', '채널·계정']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.kind === id}" data-act="kind" data-val="${id}">${l}</button>`).join('')}</div>
-      <select class="pl-select pl-select--sm" id="cat" aria-label="카테고리" style="max-width:112px;"><option value="all">카테고리 전체</option>${cats.map((c) => `<option ${S.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-      <span class="pl-u-grow"></span>
-      ${S.view === 'detail' ? `<button type="button" class="pl-btn pl-btn--soft pl-btn--xs" data-act="toggleAll" data-tip="${S.allOpen ? '모두 접기' : '모두 펼치기'}" data-tip-align="end" style="white-space:nowrap;">${icon(S.allOpen ? 'chevronUp' : 'chevron', 'pl-i--xs')}${S.allOpen ? '접기' : '펼치기'}</button>` : ''}
-    </div>
-    <div class="pl-head pl-caption">
-      <input type="checkbox" class="pl-checkbox" data-act="selAll" ${allSel ? 'checked' : ''} aria-label="전체 선택">
-      <span style="white-space:nowrap;">${list.length}개 표시</span>
-      <select class="pl-select pl-select--sm pl-u-push" id="sort" aria-label="정렬" style="border:0;background:transparent;">${SORTS.map(([id, l]) => `<option value="${id}" ${S.sort === id ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <div class="pl-seg pl-seg--sm pl-seg--inline" role="group" aria-label="보기 방법">${[['list', '목록', 'list'], ['detail', '상세', 'detail'], ['thumb', '썸네일', 'grid']].map(([id, l, ic]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.view === id}" data-act="view" data-val="${id}">${icon(ic, 'pl-i--sm')}${l}</button>`).join('')}</div>
+    <div class="pl-frow pl-frow--gap8">
+      <input type="checkbox" class="pl-check" data-act="selAll" ${allSel ? 'checked' : ''} aria-label="전체 선택">
+      <span class="pl-count">${list.length}개 표시</span>
+      <label class="pl-tsel pl-tsel--sm"><select id="sort" aria-label="정렬">${SORTS.map(([id, l]) => `<option value="${id}" ${S.sort === id ? 'selected' : ''}>${l}</option>`).join('')}</select>${icon('chevron', 'pl-i--sm')}</label>
+      <span class="pl-grow"></span>
+      ${S.view === 'detail' ? `<button type="button" class="pl-btn pl-btn--ghost pl-btn--sm" data-act="toggleAll" style="height:26px;padding:0 6px;border-radius:6px;">${S.allOpen ? '모두 접기' : '모두 펼치기'}</button>` : ''}
+      <div class="pl-seg pl-seg--icon" role="group" aria-label="보기 방법">${[['list', '목록', 'list'], ['detail', '상세', 'detail'], ['thumb', '썸네일', 'grid']].map(([id, l, ic]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.view === id}" data-act="view" data-val="${id}" aria-label="${l}" title="${l}">${icon(ic, 'pl-i--md')}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-panel__scroll" style="padding-bottom:72px;">${body}</div>
+  <div class="pl-scroll pl-scroll--bar">${body}</div>
   ${list.length ? `
-  <div class="pl-toolbar">
-    <span class="pl-toolbar__count" data-tip="${S.sel.size ? '선택한 링크에 적용돼요' : '선택하지 않으면 지금 보이는 링크 전체에 적용돼요'}" data-tip-align="start">${S.sel.size ? `<b>${S.sel.size}</b>개 선택` : `전체 <b>${list.length}</b>개`}</span>
-    <button type="button" class="pl-toolbar__btn" data-act="bCopy" aria-label="복사" data-tip="복사">${icon('copy')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bOpen" aria-label="새 탭으로 열기" data-tip="새 탭으로 열기">${icon('external')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bThumbs" aria-label="썸네일 압축 저장" data-tip="썸네일 압축(zip) 저장">${icon('image')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bWatch" aria-label="워치리스트에 추가" data-tip="워치리스트에 추가">${icon('eye')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bBookmark" aria-label="북마크" data-tip="북마크에 추가">${icon('bookmark')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bExcel" aria-label="엑셀 다운로드" data-tip="엑셀 다운로드">${icon('download')}</button>
-    <button type="button" class="pl-toolbar__btn pl-toolbar__btn--danger" data-act="bDelete" aria-label="목록에서 삭제" data-tip="목록에서 삭제">${icon('trash')}</button>
-    ${S.sel.size ? `<button type="button" class="pl-toolbar__btn pl-toolbar__btn--muted" data-act="bClear" aria-label="선택 해제" data-tip="선택 해제" data-tip-align="end">${icon('close')}</button>` : ''}
+  <div class="pl-bar" role="toolbar" aria-label="일괄 작업">
+    <span class="pl-bar__count" title="${S.sel.size ? '선택한 링크에 적용돼요' : '선택하지 않으면 지금 보이는 링크 전체에 적용돼요'}">${S.sel.size ? `${S.sel.size}개 선택` : `전체 ${list.length}개`}</span>
+    ${BAR_ACTIONS.map(([act, ic, l]) => `<button type="button" class="pl-bar__btn" data-act="${act}" aria-label="${l}" title="${l}">${icon(ic, 'pl-i--lg')}</button>`).join('')}
+    ${S.sel.size ? `<span class="pl-bar__sep" aria-hidden="true"></span><button type="button" class="pl-bar__btn" data-act="bClear" aria-label="선택 해제" title="선택 해제">${icon('close', 'pl-i--lg')}</button>` : ''}
   </div>` : ''}`;
 }
 
@@ -271,66 +257,84 @@ function ytVideoId(u) {
     return m ? m[1] : null;
   } catch (e) { return null; }
 }
+const isYtUrl = (u) => /^https?:\/\/([a-z]+\.)?(youtube\.com|youtu\.be)\//i.test(u || '');
 // My screens plus every other profile's, one flat list. Other-profile entries carry
 // { profile: { id, name, online } }; search, sort and YouTube thumbs treat both alike.
-function recentMerged() {
+function otherProfiles() {
   const connected = !!(bridge && bridge.connected);
+  return (recentOthers.profiles || []).map((p) => ({ id: p.id, name: p.name || '다른 프로필', online: connected && !!p.online, items: p.items || [] }));
+}
+function recentMerged() {
   const mine = recent.map((r) => ({ url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: null }));
-  const others = (recentOthers.profiles || []).flatMap((p) => (p.items || []).map((r) => ({
-    url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl,
-    profile: { id: p.id, name: p.name || '다른 프로필', online: connected && !!p.online }
+  const others = otherProfiles().flatMap((p) => p.items.map((r) => ({
+    url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: { id: p.id, name: p.name, online: p.online }
   })));
   return mine.concat(others);
 }
 function recentFiltered() {
   const q = S.rq.trim().toLowerCase();
   let list = recentMerged();
+  if (S.rprof === 'me') list = list.filter((r) => !r.profile);
+  else if (S.rprof !== 'all') list = list.filter((r) => r.profile && r.profile.id === S.rprof);
   if (q) list = list.filter((r) => (r.title + ' ' + r.url + ' ' + (r.profile ? r.profile.name : '')).toLowerCase().includes(q));
   return list.sort((a, b) => (S.rsort === 'old' ? a.at - b.at : b.at - a.at));
+}
+function recentRow(r, saved) {
+  const p = r.profile;
+  const isOpen = !p && openTabs.has(rkey(r.url));
+  const isSaved = saved.has(rkey(r.url));
+  const vid = ytVideoId(r.url);
+  const media = vid ? `<span class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" style="background-image:url('https://i.ytimg.com/vi/${vid}/mqdefault.jpg')"></span>`
+    : r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">`
+    : `<span class="pl-recent__letter">${esc((hostOf(r.url)[0] || '?').toUpperCase())}</span>`;
+  const pAttrs = p ? ` data-pid="${esc(p.id)}" data-on="${p.online ? 1 : 0}" data-name="${esc(p.name)}"` : '';
+  const goTip = p ? (p.online ? `‘${p.name}’ 프로필에서 열기` : '오프라인 프로필 — 이 프로필에서 새 탭으로 열기')
+    : isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기';
+  return `<div class="pl-recent${p && !p.online ? ' is-offline' : ''}">
+    <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}"${pAttrs} title="${esc(goTip)}">
+      <span class="pl-recent__media">${media}</span>
+      <span class="pl-recent__text">
+        <span class="pl-recent__title">${isYtUrl(r.url) ? ytLogo() : ''}${esc(r.title || r.url)}</span>
+        <span class="pl-recent__sub">${isOpen ? '<span class="pl-recent__open"><span class="pl-odot"></span>열림</span><span>·</span>' : ''}<span class="pl-trunc">${esc(hostOf(r.url))} · ${esc(timeAgo(new Date(r.at).toISOString()))}</span></span>
+      </span>
+    </button>
+    ${p ? `<span class="pl-ptag" title="${p.online ? '온라인' : '오프라인'} 프로필">${icon('person', 'pl-i--xs')}<span>${esc(p.name)}</span></span>` : ''}
+    <div class="pl-recent__acts">
+      <button type="button" class="pl-ibtn" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" title="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--md')}</button>
+      <button type="button" class="pl-ibtn" data-act="rDel" data-val="${esc(r.url)}"${pAttrs} aria-label="목록에서 삭제" title="${p ? '그 프로필의 목록에서 삭제' : '목록에서 삭제'}">${icon('trash', 'pl-i--md')}</button>
+    </div>
+  </div>`;
 }
 function renderRecent() {
   const list = recentFiltered();
   const saved = new Set(links.map((l) => rkey(l.url)));
   const connected = !!(bridge && bridge.connected);
-  const othersCount = list.filter((r) => r.profile).length;
-  const rows = list.map((r) => {
-    const p = r.profile;
-    const isOpen = !p && openTabs.has(rkey(r.url));
-    const isSaved = saved.has(rkey(r.url));
-    const vid = ytVideoId(r.url);
-    const fav = vid ? `<span class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" style="background-image:url('https://i.ytimg.com/vi/${vid}/mqdefault.jpg')"></span>`
-      : r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">` : `<span class="pl-recent__fav pl-recent__fav--empty">${icon('link', 'pl-i--xs')}</span>`;
-    const pAttrs = p ? ` data-pid="${esc(p.id)}" data-on="${p.online ? 1 : 0}" data-name="${esc(p.name)}"` : '';
-    const goTip = p ? (p.online ? `‘${esc(p.name)}’ 프로필에서 열기` : '오프라인 프로필 — 이 프로필에서 새 탭으로 열기')
-      : isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기';
-    const badge = p ? `<span class="pl-badge pl-badge--sq" data-tone="${p.online ? 'violet' : ''}" style="height:15px;padding:0 5px;font-size:10px;flex-shrink:0;">${esc(p.name)}</span> · ` : '';
-    return `<div class="pl-recent${p && !p.online ? ' is-offline' : ''}">
-      <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}"${pAttrs} title="${goTip}">
-        ${fav}
-        <span class="pl-recent__text">
-          <span class="pl-recent__title pl-u-truncate">${esc(r.title || r.url)}</span>
-          <span class="pl-recent__sub pl-u-truncate">${isOpen ? '<b class="pl-recent__open">열림</b> · ' : ''}${badge}${esc(hostOf(r.url))} · ${esc(timeAgo(new Date(r.at).toISOString()))}</span>
-        </span>
-      </button>
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm ${isSaved ? 'is-on' : ''}" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" data-tip="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" data-tip-align="end" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--sm')}</button>
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="rDel" data-val="${esc(r.url)}"${pAttrs} aria-label="목록에서 삭제" data-tip="${p ? '그 프로필의 목록에서 삭제' : '목록에서 삭제'}" data-tip-align="end">${icon('trash', 'pl-i--sm')}</button>
-    </div>`;
-  }).join('');
+  const profiles = otherProfiles();
+  if (S.rprof !== 'all' && S.rprof !== 'me' && !profiles.some((p) => p.id === S.rprof)) S.rprof = 'all';
+  const chips = profiles.length ? `
+    <div class="pl-frow pl-frow--wrap">
+      <button type="button" class="pl-chip" aria-pressed="${S.rprof === 'all'}" data-act="rprof" data-val="all">모든 프로필</button>
+      <button type="button" class="pl-chip" aria-pressed="${S.rprof === 'me'}" data-act="rprof" data-val="me"><span class="pl-odot"></span>이 프로필</button>
+      ${profiles.map((p) => `<button type="button" class="pl-chip ${p.online ? '' : 'pl-chip--muted'}" aria-pressed="${S.rprof === p.id}" data-act="rprof" data-val="${esc(p.id)}" title="${p.online ? '온라인' : '오프라인'}"><span class="pl-odot ${p.online ? '' : 'pl-odot--off'}"></span>${esc(p.name)}</button>`).join('')}
+    </div>` : '';
   const notice = connected ? '' : `
-    <div class="pl-card" data-bridge-notice style="margin:10px 14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--pl-surface-2);border-color:var(--pl-divider);">
-      <span class="pl-u-strong" style="font-size:12px;">다른 프로필 연동: 도우미 설치 필요</span>
-      <span class="pl-caption">다른 크롬 프로필의 최근 화면까지 보려면 저장소의 native-host\\install.bat 을 한 번 실행하세요. 모든 프로필에 같은 dist 폴더로 Power Link가 설치돼 있어야 해요.</span>
+    <div class="pl-notice" data-bridge-notice>
+      <span class="pl-notice__title">다른 프로필 연동: 도우미 설치 필요</span>
+      <span class="pl-caption">다른 크롬 프로필의 최근 화면까지 보려면 native-host\\install.bat 을 한 번 실행하세요. 모든 프로필에 같은 dist 폴더로 Power Link가 설치돼 있어야 해요.</span>
       <button type="button" class="pl-btn pl-btn--sm" data-act="rBridgeRetry" style="align-self:flex-start;">다시 연결</button>
     </div>`;
+  const total = recentMerged().length;
   return `
-  <div class="pl-panel__filters">
-    <label class="pl-input-group">${icon('search', 'pl-i--sm')}<input type="text" id="rq" placeholder="제목, 주소, 프로필 검색" value="${esc(S.rq)}"></label>
-    <div class="pl-head pl-caption">
-      <span style="white-space:nowrap;">${list.length}개 · 최대 ${settings.recentMax || 50}개 기록${othersCount ? ` · 다른 프로필 ${othersCount}개` : ''}</span>
-      <div class="pl-seg pl-seg--sm pl-seg--inline pl-u-push" role="group" aria-label="정렬">${[['new', '최근 화면'], ['old', '오래된 화면']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
+  <div class="pl-filters">
+    <label class="pl-search">${icon('search')}<input type="text" id="rq" placeholder="제목, 주소 검색" value="${esc(S.rq)}" aria-label="검색"></label>
+    ${chips}
+    <div class="pl-frow pl-frow--gap8">
+      <span class="pl-count">${list.length}개 · 최대 ${settings.recentMax || 50}개 기록</span>
+      <span class="pl-grow"></span>
+      <div class="pl-seg" role="group" aria-label="정렬">${[['new', '최근 순'], ['old', '오래된 순']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-panel__scroll">${notice}${rows || emptyState(recentMerged().length ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', recentMerged().length ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.')}</div>`;
+  <div class="pl-scroll">${notice}${list.length ? `<div class="pl-recent-list">${list.map((r) => recentRow(r, saved)).join('')}</div>` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>`;
 }
 async function goRecent(url) {
   const k = rkey(url);
@@ -355,57 +359,71 @@ async function goRecentOther(url, pid, online, name) {
 }
 async function setRecent(list) { await chrome.storage.local.set({ [STORAGE.recent]: list }); }
 
+// ------------------------------------------------------------------ keywords & watchlist
 function renderKeywords() {
   const kws = keywordStats(links, S.kwSource, 20);
   const max = kws[0]?.n || 1;
-  return `<div class="pl-panel__scroll" style="padding:14px;display:flex;flex-direction:column;gap:12px;">
-    <div class="pl-head">
-      <div style="display:flex;flex-direction:column;"><span class="pl-title-xs">자주 나오는 키워드</span><span class="pl-caption">수집한 링크 ${links.length}개의 ${S.kwSource === 'tags' ? '태그·해시태그' : '제목'} 기준</span></div>
-      <div class="pl-seg pl-seg--sm pl-seg--inline pl-u-push"><button type="button" class="pl-seg__item" aria-pressed="${S.kwSource === 'title'}" data-act="kwSource" data-val="title">제목</button><button type="button" class="pl-seg__item" aria-pressed="${S.kwSource === 'tags'}" data-act="kwSource" data-val="tags">태그·해시태그</button></div>
+  return `<div class="pl-scroll"><div class="pl-pane">
+    <div class="pl-pane__head">
+      <div class="pl-grow"><div class="pl-pane__title">자주 나오는 키워드</div><div class="pl-caption">수집한 링크 ${links.length}개의 ${S.kwSource === 'tags' ? '태그·해시태그' : '제목'} 기준</div></div>
+      <div class="pl-seg"><button type="button" class="pl-seg__item" aria-pressed="${S.kwSource === 'title'}" data-act="kwSource" data-val="title">제목</button><button type="button" class="pl-seg__item" aria-pressed="${S.kwSource === 'tags'}" data-act="kwSource" data-val="tags">태그</button></div>
     </div>
-    ${kws.length ? `<div style="display:flex;flex-direction:column;gap:2px;">${kws.map((k, i) => `
-      <button type="button" class="pl-bar-row" data-act="kwFilter" data-val="${esc(k.word)}" style="border:0;background:transparent;padding:0;cursor:pointer;text-align:left;" title="이 키워드로 링크 거르기">
-        <span class="pl-bar-row__rank">${i + 1}</span><span class="pl-bar-row__word">${esc(k.word)}</span>
-        <span class="pl-bar"><span class="pl-bar__fill" style="display:block;width:${Math.round((k.n / max) * 100)}%"></span></span><span class="pl-bar-row__n">${k.n}</span>
+    ${kws.length ? `<div>${kws.map((k, i) => `
+      <button type="button" class="pl-kw" data-act="kwFilter" data-val="${esc(k.word)}" title="이 키워드로 링크 거르기">
+        <span class="pl-kw__rank">${i + 1}</span><span class="pl-kw__word">${esc(k.word)}</span>
+        <span class="pl-kw__bar"><span class="pl-kw__fill" style="width:${Math.round((k.n / max) * 100)}%"></span></span><span class="pl-kw__n">${k.n}</span>
       </button>`).join('')}</div>
-      <button type="button" class="pl-btn pl-btn--lg" data-act="kwCopy">${icon('copy')}키워드 복사</button>`
-      : emptyState('키워드가 아직 없어요', S.kwSource === 'tags' ? '유튜브 정보를 가져오면 태그가 모여요.' : '링크를 모으면 제목에서 키워드를 뽑아요.')}
-  </div>`;
+      <button type="button" class="pl-btn pl-btn--lg pl-btn--block" data-act="kwCopy">${icon('copy')}키워드 복사</button>`
+      : emptyState('키워드가 아직 없어요', S.kwSource === 'tags' ? '유튜브 정보를 가져오면 태그가 모여요.' : '링크를 모으면 제목에서 키워드를 뽑아요.', 'tag')}
+  </div></div>`;
 }
 
 function renderWatch() {
-  return `<div class="pl-panel__scroll">
-    <div class="pl-head" style="padding:12px 14px;border-bottom:1px solid var(--pl-divider);">
-      <div style="display:flex;flex-direction:column;"><span class="pl-title-xs">채널·계정 워치리스트</span><span class="pl-caption">${watchCheckedAt ? '마지막 확인 ' + timeAgo(watchCheckedAt) : '아직 확인 전'} · 6시간마다 자동 확인</span></div>
-      <button type="button" class="pl-btn pl-btn--sm pl-u-push" data-act="watchCheck">${icon('refresh', 'pl-i--sm')}지금 확인</button>
+  return `<div class="pl-scroll">
+    <div class="pl-pane" style="padding-bottom:12px;border-bottom:1px solid var(--pl-divider);">
+      <div class="pl-pane__head">
+        <div class="pl-grow"><div class="pl-pane__title">채널·계정 워치리스트</div><div class="pl-caption">${watchCheckedAt ? '마지막 확인 ' + timeAgo(watchCheckedAt) : '아직 확인 전'} · 6시간마다 자동 확인</div></div>
+        <button type="button" class="pl-btn pl-btn--sm" data-act="watchCheck">${icon('refresh', 'pl-i--sm')}지금 확인</button>
+      </div>
     </div>
     ${watch.length ? watch.map((w, i) => {
       const delta = w.followers != null && w.prevFollowers != null ? w.followers - w.prevFollowers : null;
       const p = PLATFORMS[w.platform] || PLATFORMS.web;
-      return `<div class="pl-head" style="padding:12px 14px;border-bottom:1px solid var(--pl-divider);gap:10px;">
-        <span class="pl-avatar pl-avatar--lg" style="${avatarStyle(w.avatar)}"></span>
-        <div class="pl-u-grow" style="display:flex;flex-direction:column;gap:2px;">
-          <span class="pl-meta"><a class="pl-u-strong pl-u-truncate" style="font-size:12.5px;" href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.name)}</a><span class="pl-platform"><span class="pl-dot pl-dot--sm" data-tone="${w.platform}"></span>${esc(p.short)}</span></span>
-          <span class="pl-u-muted" style="font-size:11px;">${w.platform === 'yt' ? `${p.follower} ${w.followers != null ? compactKo(w.followers) : '-'}${delta ? ` <b class="${delta > 0 ? 'pl-u-success' : 'pl-u-danger'}">${delta > 0 ? '+' : ''}${compactKo(delta)}</b>` : ''}` : '자동 확인은 유튜브만 지원해요'}</span>
+      return `<div class="pl-watch">
+        ${avatar(w.name, w.avatar, 'pl-av--lg')}
+        <div class="pl-watch__body">
+          <a class="pl-watch__name" href="${esc(w.url)}" target="_blank" rel="noopener">${w.platform === 'yt' ? ytLogo() : ''}${esc(w.name)}</a>
+          <span class="pl-watch__sub">${w.platform === 'yt' ? `${p.follower} ${w.followers != null ? compactKo(w.followers) : '-'}${delta ? ` <span class="${delta > 0 ? 'pl-up' : ''}">${delta > 0 ? '+' : ''}${compactKo(delta)}</span>` : ''}` : '자동 확인은 유튜브만 지원해요'}</span>
         </div>
-        ${w.fresh ? `<button type="button" class="pl-badge" data-tone="danger" data-act="watchSeen" data-val="${i}" style="border:0;cursor:pointer;" title="확인함으로 표시">새 글 ${w.fresh}</button>` : ''}
-        <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="watchRemove" data-val="${i}" aria-label="삭제" data-tip="워치리스트에서 빼기" data-tip-align="end">${icon('close', 'pl-i--sm')}</button>
+        ${w.fresh ? `<button type="button" class="pl-chip pl-chip--sm" data-act="watchSeen" data-val="${i}" title="확인함으로 표시">새 글 ${w.fresh}</button>` : ''}
+        <button type="button" class="pl-ibtn pl-ibtn--sm pl-ibtn--muted" data-act="watchRemove" data-val="${i}" aria-label="워치리스트에서 빼기" title="워치리스트에서 빼기">${icon('close', 'pl-i--sm')}</button>
       </div>`;
-    }).join('') : emptyState('워치리스트가 비어 있어요', '상세 보기에서 채널·계정을 펼친 뒤 ‘워치리스트 추가’를 누르세요.')}
+    }).join('') : emptyState('워치리스트가 비어 있어요', '상세 보기에서 채널을 펼친 뒤 ‘워치리스트’를 누르세요.', 'eye')}
   </div>`;
 }
 
+// ------------------------------------------------------------------ frame
 function render() {
   const active = document.activeElement;
   const refocus = active && active.id ? active.id : active && active.dataset && active.dataset.memoInput ? 'memo' : null;
   const selStart = active && active.selectionStart;
+  const dark = currentTheme() === 'dark';
   app.innerHTML = `
-    <header class="pl-panel__head pl-panel__head--tabs">
-      <nav class="pl-tabs pl-tabs--inline" role="tablist">
-        ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
-      </nav>
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm pl-u-push" data-act="options" aria-label="설정" data-tip="설정" data-tip-pos="below" data-tip-align="end">${icon('sliders')}</button>
+    <header class="pl-sp__head">
+      ${logo(22, 1.2)}
+      <span class="pl-sp__name">Power Link</span>
+      <span class="pl-sp__ver">v${version()}</span>
+      <div class="pl-sp__tools">
+        <button type="button" class="pl-ibtn" data-act="collectWin" aria-label="현재 창의 링크 모으기" title="현재 창의 링크 모으기">${icon('collect', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn" data-act="theme" aria-label="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}" title="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}">${icon(dark ? 'sun' : 'moon', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn" data-act="options" aria-label="설정" title="설정">${icon('sliders', 'pl-i--lg')}</button>
+        <span class="pl-sp__sep" aria-hidden="true"></span>
+        <button type="button" class="pl-ibtn" data-act="closePanel" aria-label="사이드 패널 닫기" title="사이드 패널 닫기">${icon('close', 'pl-i--lg')}</button>
+      </div>
     </header>
+    <nav class="pl-tabs" role="tablist">
+      ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
+    </nav>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   else if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
@@ -497,13 +515,25 @@ async function bookmark(items) {
   toast(`북마크 ‘Power Link’ 폴더에 ${items.length}개를 추가했어요`);
 }
 
+// Header button: collect the links of every tab in the current window, using the popup's
+// platform / kind choices, and store them in the list.
+async function collectWindow() {
+  const p = settings.popup || {};
+  toast('현재 창의 링크를 모으는 중…', 'warning');
+  report(await send({ type: 'pl:collectTabs', action: 'save', scope: 'window', plats: p.plats || ['all'], kinds: p.kinds && p.kinds.length ? p.kinds : ['all'], after: 'keep', sort: 'none', mode: settings.collect }));
+}
+
 app.addEventListener('click', async (e) => {
   const t = e.target.closest('[data-act]');
-  if (!t) return;
+  if (!t || t.tagName === 'SELECT') return;
   const act = t.dataset.act, id = t.dataset.id, val = t.dataset.val;
   switch (act) {
     case 'tab': S.tab = val; if (val === 'recent') { await refreshOpenTabs(); send({ type: 'pl:recentSeed' }); } break;
+    case 'collectWin': await collectWindow(); return;
+    case 'theme': await setTheme(currentTheme() === 'dark' ? 'light' : 'dark'); break;
+    case 'closePanel': window.close(); return;
     case 'rsort': S.rsort = val; break;
+    case 'rprof': S.rprof = val; break;
     case 'rGo':
       if (t.dataset.pid) await goRecentOther(val, t.dataset.pid, t.dataset.on === '1', t.dataset.name || '다른 프로필');
       else await goRecent(val);
@@ -525,7 +555,6 @@ app.addEventListener('click', async (e) => {
       return;
     }
     case 'platform': S.platform = val; break;
-    case 'kind': S.kind = val; break;
     case 'view': S.view = val; setSettings({ sidepanel: { view: val } }); break;
     case 'toggleAll': S.allOpen = !S.allOpen; S.open.clear(); break;
     case 'expand': if (S.allOpen) { S.allOpen = false; filtered().forEach((l) => S.open.add(l.id)); } S.open.has(id) ? S.open.delete(id) : S.open.add(id); break;
@@ -562,6 +591,7 @@ app.addEventListener('input', (e) => {
 });
 app.addEventListener('change', async (e) => {
   if (e.target.id === 'cat') { S.cat = e.target.value; render(); }
+  if (e.target.id === 'kind') { S.kind = e.target.value; render(); }
   if (e.target.id === 'sort') { S.sort = e.target.value; render(); }
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
 });
@@ -579,9 +609,11 @@ chrome.storage.onChanged.addListener(async (ch, area) => {
   if (area === 'local' && ch[STORAGE.recentOthers]) { recentOthers = ch[STORAGE.recentOthers].newValue || { profiles: [] }; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.bridge]) { bridge = ch[STORAGE.bridge].newValue || null; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
+  if (area === 'local' && ch.pl_theme) render(); // header icon follows the theme
   if (area === 'local' && ch.pl_watchCheckedAt) watchCheckedAt = ch.pl_watchCheckedAt.newValue;
-  if (area === 'sync' && ch[STORAGE.settings]) settings = await getSettings();
+  if (area === 'sync' && ch[STORAGE.settings]) { settings = await getSettings(); render(); }
 });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
 
 // keep the 'open' badges current while the recent tab is showing
 let tabsTimer = 0;
@@ -598,6 +630,7 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (info.url || info.status ==
   recentOthers = (await chrome.storage.local.get(STORAGE.recentOthers))[STORAGE.recentOthers] || { profiles: [] };
   bridge = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || null;
   ({ pl_watchCheckedAt: watchCheckedAt } = await chrome.storage.local.get('pl_watchCheckedAt'));
+  await themeReady;
   render();                       // screen first
   hasKey = !!(await getApiKey());  // then details, asynchronously
   if (hasKey) { render(); kickEnrich(); }
