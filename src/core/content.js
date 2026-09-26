@@ -299,14 +299,17 @@
   }
   const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
 
-  // ---------------------------------------------------------------- kept selections
-  // After a drag, every link it selected keeps its highlight outline, so already-collected links
-  // are visible and not picked twice. The drag path itself (box / lasso) disappears as before.
-  // Outlines sit in page coordinates (follow scrolling, never block clicks) and stay until the
-  // page reloads or the address changes (SPA navigation).
+  // ---------------------------------------------------------------- kept selections (toggle)
+  // A drag toggles the links it covers: links without an outline get one (and the rule's action
+  // runs for them), links that already have one lose it and leave the side-panel list.
+  // Outlines are tracked per URL (every anchor pointing at a selected URL is outlined), sit in page
+  // coordinates (follow scrolling, never block clicks) and stay until reload / address change.
+  // Deleting a link in the side panel removes its outline here too (storage sync).
+  const keyOf = (u) => (globalThis.PLNormalize ? globalThis.PLNormalize(u) : u);
   let marksHref = '', marksRaf = 0, marksTimer = 0;
-  let marked = new WeakMap(); // link element → its outline
+  let marks = new Map(); // url key → { tone, saved, els: Map(anchor → outline div) }
   const marksDoc = () => root && root.querySelector('.marks-doc');
+  const isMarked = (a) => marks.has(keyOf(a.href));
   function syncMarks() {
     marksRaf = 0;
     const doc = marksDoc();
@@ -314,28 +317,54 @@
   }
   function clearMarks() {
     const doc = marksDoc();
-    if (!doc) return;
-    doc.replaceChildren();
-    marked = new WeakMap();
+    if (doc) doc.replaceChildren();
+    marks = new Map();
     clearInterval(marksTimer); marksTimer = 0;
   }
-  function keepMarks(rule, hits) {
-    if (!hits.size) return;
+  function placeOutline(el, a) {
+    const r = a.getBoundingClientRect();
+    el.style.left = r.left + scrollX - 2 + 'px'; el.style.top = r.top + scrollY - 2 + 'px';
+    el.style.width = r.width + 4 + 'px'; el.style.height = r.height + 4 + 'px';
+  }
+  function markUrls(keys, tone, saved) {
+    if (!keys.size) return;
     ensureOverlay();
     if (marksHref !== location.href) { clearMarks(); marksHref = location.href; }
     const doc = marksDoc();
-    const tone = rule.color || '#2F6BFF';
-    for (const c of hits) {
-      let m = marked.get(c.a);
-      if (!m) { m = document.createElement('div'); m.className = 'mark'; doc.appendChild(m); marked.set(c.a, m); }
-      m.style.cssText = `--tone:${tone};left:${c.x - 2}px;top:${c.y - 2}px;width:${c.w + 4}px;height:${c.h + 4}px`;
+    for (const a of document.querySelectorAll('a[href]')) {
+      const k = keyOf(a.href);
+      if (!keys.has(k)) continue;
+      const r = a.getBoundingClientRect();
+      if (!r.width && !r.height) continue; // hidden duplicates
+      let m = marks.get(k);
+      if (!m) { m = { tone, saved, els: new Map() }; marks.set(k, m); }
+      m.tone = tone; m.saved = m.saved || saved;
+      let el = m.els.get(a);
+      if (!el) { el = document.createElement('div'); el.className = 'mark'; doc.appendChild(el); m.els.set(a, el); }
+      el.style.setProperty('--tone', tone);
+      placeOutline(el, a);
     }
     syncMarks();
     // SPA sites (YouTube…) change the address without reloading: drop marks from the old page
     if (!marksTimer) marksTimer = setInterval(() => { if (location.href !== marksHref) clearMarks(); }, 1000);
   }
+  function unmarkUrls(keys) {
+    for (const k of keys) {
+      const m = marks.get(k);
+      if (!m) continue;
+      m.els.forEach((el) => el.remove());
+      marks.delete(k);
+    }
+  }
   addEventListener('scroll', () => { if (marksTimer && !marksRaf) marksRaf = requestAnimationFrame(syncMarks); }, { capture: true, passive: true });
-
+  // side panel deleted links → drop their outlines (only outlines whose link went into the list)
+  try {
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area !== 'local' || !ch.pl_links || !marks.size) return;
+      const keep = new Set((ch.pl_links.newValue || []).map((l) => keyOf(l.url)));
+      unmarkUrls([...marks.entries()].filter(([k, m]) => m.saved && !keep.has(k)).map(([k]) => k));
+    });
+  } catch (e) { /* extension context invalidated */ }
   function clearDrawing() {
     if (!layer) return;
     boxEl.style.display = 'none';
@@ -396,23 +425,39 @@
     document.documentElement.style.removeProperty('user-select');
     if (!d) return;
     const hits = computeHitsFor(d);
-    keepMarks(d.rule, hits);
-    const links = buildLinks(hits);
     const rule = d.rule;
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
-    if (!links.length) { toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 링크가 없어요', sub: how }); return; }
+    // toggle: outlined links are deselected (outline off + removed from the list), the rest are selected
+    const fresh = new Set(), off = new Set();
+    for (const h of hits) (isMarked(h.a) ? off : fresh).add(h);
+    const offKeys = new Set([...off].map((h) => keyOf(h.a.href)));
+    if (offKeys.size) {
+      unmarkUrls(offKeys);
+      if (!DEMO) {
+        const r = await send({ type: 'pl:removeUrls', urls: [...offKeys] });
+        const n = r && r.ok ? r.count : 0;
+        toast({ title: `선택 해제 ${offKeys.size}개${n ? ` · 수집 링크에서 ${n}개 삭제` : ''}`, sub: how,
+          actions: r && r.undoToken ? [{ label: '되돌리기', run: async () => { await send({ type: 'pl:undo', token: r.undoToken }); markUrls(offKeys, rule.color || '#2F6BFF', true); } }] : [] });
+      } else toast({ title: `(연습) 선택 해제 ${offKeys.size}개`, sub: how });
+    }
+    const links = buildLinks(fresh);
+    if (!links.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 링크가 없어요', sub: how }); return; }
+    const newKeys = new Set(links.map((l) => keyOf(l.url)));
+    const saves = rule.action === 'save' || settings.alsoSave !== false;
     if ((rule.action === 'tabs' || rule.action === 'window') && links.length > (settings.confirmOver || 20)) {
       if (!confirm(`링크 ${links.length}개를 ${rule.action === 'tabs' ? '새 탭' : '새 창'}으로 열까요?`)) return;
     }
     const lines = links.slice(0, 3).map((l) => '• ' + (l.title || l.url));
     if (links.length > 3) lines.push(`외 ${links.length - 3}개`);
     if (DEMO) {
+      markUrls(newKeys, rule.color || '#2F6BFF', false);
       toast({ tone: rule.color, title: `(연습) 링크 ${links.length}개 · ${ACTION_LABEL[rule.action]}`, sub: how + ' · 실제 동작은 하지 않아요', lines });
       globalThis.dispatchEvent(new CustomEvent('pl-demo-result', { detail: { count: links.length, action: rule.action } }));
       return;
     }
     const res = await send({ type: 'pl:grab', action: rule.action, shape: rule.shape, mod: rule.mod, links, page: { url: location.href, title: document.title } });
     if (!res || !res.ok) { toast({ tone: '#F04438', error: true, title: (res && res.message) || '처리하지 못했어요', sub: how }); return; }
+    markUrls(newKeys, rule.color || '#2F6BFF', saves);
     if (res.copyPayload && !(await writeClip(res.copyPayload.text, res.copyPayload.html))) {
       toast({ tone: '#F04438', error: true, title: '클립보드에 복사하지 못했어요', sub: '페이지를 한 번 클릭한 뒤 다시 시도해 주세요' });
       return;
@@ -454,6 +499,10 @@
   // ---------------------------------------------------------------- events
   addEventListener('mousedown', (e) => {
     if (drag) return;
+    // every press starts fresh: a modifier press whose release we never saw (Chrome's context
+    // menu swallows the mouseup after Shift + right click) must not turn the next plain drag
+    // into that rule
+    press = null;
     const rule = findRule(e);
     if (!rule) return;
     press = { rule, cx: e.clientX, cy: e.clientY };
@@ -467,6 +516,8 @@
     if ((drag || press) && e.buttons === 0) { if (drag) endDrag(); else press = null; return; }
     if (press && !drag) {
       if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) < DRAG_START) return;
+      // the rule's modifier must still be held when the drag really starts; no modifier = no action
+      if (modOf(e) !== press.rule.mod) { press = null; return; }
       ensureOverlay();
       drag = { rule: press.rule, points: [pageOf(press.cx, press.cy)], cur: { cx: e.clientX, cy: e.clientY }, cands: collectCandidates(), hits: new Set() };
       press = null;

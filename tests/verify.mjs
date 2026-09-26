@@ -38,6 +38,8 @@ await setClip('EMPTY');
 await drag('Alt', [10, 60], [900, 560], [[900, 60], [900, 560], [10, 560]]);
 let links = await storeLinks();
 ok('Alt+우클릭 올가미 → 목록 저장', links.length >= 8, links.length + '개');
+// dragging outlined links again deselects them (toggle) — start the next drags on a fresh page
+await page.reload(); await page.waitForTimeout(800);
 await setClip('EMPTY');
 await drag('Control', [15, 70], [300, 200]);
 let c = await clip();

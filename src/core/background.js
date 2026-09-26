@@ -502,6 +502,18 @@ const handlers = {
     return { ok: true, message: `링크 ${items.length}개를 복사했어요`, copyPayload: { text, html } };
   },
 
+  // page drag deselected already-outlined links → take them out of the side-panel list
+  'pl:removeUrls': async (msg) => {
+    const keys = new Set((msg.urls || []).map((u) => globalThis.PLNormalize(u)));
+    const before = await getLinks();
+    const next = before.filter((l) => !keys.has(globalThis.PLNormalize(l.url)));
+    const count = before.length - next.length;
+    if (!count) return { ok: true, count: 0 };
+    const undoToken = await remember(before);
+    await setLinks(next);
+    return { ok: true, count, undoToken };
+  },
+
   'pl:openUrls': async (msg) => {
     const settings = await getSettings();
     await openTabs(msg.urls, { newWindow: !!msg.newWindow, background: settings.bgTabs !== false });
