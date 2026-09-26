@@ -156,11 +156,75 @@
 
   // ---------------------------------------------------------------- link info
   const text = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+
+  // ---------------------------------------------------------------- titles
+  // Thumbnail links (YouTube, blogs, shops) carry only a duration or badge ("8:02", "SHORTS").
+  // For those, borrow the title from the card the link sits in, or from another link to the same URL.
+  const WEAK = /^(?:[\d:.\s]+|live|shorts?|쇼츠|지금 재생 중|now playing|재생목록|playlist|ad|광고|new|새 동영상|\d+\s*(?:분|초|시간|개|views?|회)?)$/i;
+  function isWeakTitle(t) {
+    t = text(t);
+    return t.length < 2 || WEAK.test(t) || /^(?:[\d:]+\s*)+(?:지금 재생 중|now playing)?$/i.test(t);
+  }
+  function cleanTitle(t) {
+    // "8:02 지금 재생 중 Real title" → "Real title"; drop trailing duration badges.
+    t = text(t).replace(/^(?:\d{1,2}:)?\d{1,2}:\d{2}\s*(?:지금 재생 중|now playing)?\s*/i, '').replace(/\s*(?:\d{1,2}:)?\d{1,2}:\d{2}$/, '');
+    return text(t);
+  }
+  const CARD = [
+    'ytd-rich-item-renderer', 'ytd-video-renderer', 'ytd-grid-video-renderer', 'ytd-compact-video-renderer', 'ytd-playlist-video-renderer',
+    'ytd-reel-item-renderer', 'ytd-playlist-panel-video-renderer', 'ytm-shorts-lockup-view-model', 'ytm-shorts-lockup-view-model-v2',
+    'yt-lockup-view-model', 'ytd-rich-grid-media', 'ytd-endscreen-element-renderer', 'article', 'li'
+  ].join(',');
+  const YT_TITLE = '#video-title, #video-title-link, a#video-title, .yt-lockup-metadata-view-model__title, .shortsLockupViewModelHostMetadataTitle, .yt-core-attributed-string[role="text"], h3';
+  function titleFromEl(el) {
+    if (!el) return '';
+    return cleanTitle(text(el.getAttribute && el.getAttribute('title')) || text(el.textContent) || text(el.getAttribute && el.getAttribute('aria-label')));
+  }
+  let sameUrlIndex = null, sameUrlAt = 0;
+  function sameUrlTitle(url) {
+    const norm = globalThis.PLNormalize || ((u) => u);
+    if (!sameUrlIndex || Date.now() - sameUrlAt > 3000) {
+      sameUrlIndex = new Map(); sameUrlAt = Date.now();
+      for (const x of document.querySelectorAll('a[href]')) {
+        if (host && host.contains(x)) continue;
+        const t = titleFromEl(x);
+        if (isWeakTitle(t)) continue;
+        const k = norm(x.href);
+        const prev = sameUrlIndex.get(k);
+        if (!prev || (t.length > prev.length && t.length < 200)) sameUrlIndex.set(k, t);
+      }
+    }
+    return sameUrlIndex.get(norm(url)) || '';
+  }
+  function betterTitle(a, url) {
+    // 1) the card this link belongs to
+    let card = a.closest(CARD);
+    if (card) {
+      // skip containers that hold several different links (menus, long lists)
+      const norm = globalThis.PLNormalize || ((u) => u);
+      const hrefs = new Set([...card.querySelectorAll('a[href]')].slice(0, 30).map((x) => norm(x.href)));
+      if (hrefs.size > 3) card = null;
+    }
+    if (card) {
+      for (const el of card.querySelectorAll(YT_TITLE)) { const t = titleFromEl(el); if (!isWeakTitle(t)) return t; }
+      const img = card.querySelector('img[alt]');
+      if (img && !isWeakTitle(img.alt)) return cleanTitle(img.alt);
+    }
+    // 2) any other link on the page pointing at the same URL
+    const t = sameUrlTitle(url);
+    if (t) return t;
+    // 3) the page itself, when the link points here (e.g. the video being watched)
+    const norm = globalThis.PLNormalize || ((u) => u);
+    if (norm(url) === norm(location.href)) return text(document.title).replace(/\s*-\s*YouTube$/, '');
+    return '';
+  }
+
   function infoOf(a) {
     const url = a.href;
     const c = globalThis.PLClassify ? globalThis.PLClassify(url) : { platform: 'web', kind: 'post' };
     const img = a.querySelector('img');
-    let title = text(a.getAttribute('aria-label')) || text(a.getAttribute('title')) || text(a.innerText) || text(img && img.alt);
+    let title = cleanTitle(text(a.getAttribute('title')) || text(a.innerText) || text(a.getAttribute('aria-label')) || text(img && img.alt));
+    if (isWeakTitle(title)) title = betterTitle(a, url) || (isWeakTitle(title) ? '' : title);
     if (title.length > 300) title = title.slice(0, 300);
     let thumb = '';
     if (c && c.platform === 'yt' && c.videoId) thumb = `https://i.ytimg.com/vi/${c.videoId}/hqdefault.jpg`;
@@ -316,7 +380,10 @@
       actions.push({ label: '되돌리기', run: () => send({ type: 'pl:undo', token: res.undoToken }) });
       actions.push({ label: '사이드바에서 보기', primary: true, run: () => send({ type: 'pl:openSidePanel' }) });
     }
-    toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines, actions });
+    const shown = Array.isArray(res.titles) && res.titles.length ? res.titles : links.map((l) => l.title || l.url);
+    const finalLines = shown.slice(0, 3).map((t) => '• ' + t);
+    if (shown.length > 3) finalLines.push(`외 ${shown.length - 3}개`);
+    toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
   }
   async function writeClip(text, html) {
     try {

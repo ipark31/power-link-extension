@@ -107,10 +107,29 @@ async function remember(snapshot) {
 }
 
 // ------------------------------------------------------------------ core action
+// YouTube thumbnail links often arrive without a title (only "8:02").
+// Fill them from YouTube's public oEmbed endpoint (no API key, no quota).
+const WEAK_TITLE = /^(?:[\d:.\s]+|live|shorts?|쇼츠)?$/i;
+async function fillMissingTitles(items) {
+  const todo = items.filter((i) => i.platform === 'yt' && (!i.title || i.title === i.url || WEAK_TITLE.test(i.title.trim())) && (i.ids?.videoId || /[?&]v=|\/shorts\//.test(i.url))).slice(0, 50);
+  await Promise.all(todo.map(async (it) => {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 3000);
+      const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(it.url), { signal: ctl.signal });
+      clearTimeout(t);
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.title) it.title = j.title;
+    } catch (e) { /* offline or blocked: keep what we have */ }
+  }));
+}
+
 async function runAction({ action, links, sourceTab, source, modeOverride, viaPage = false }) {
   const settings = await getSettings();
   const mode = modeOverride || settings.collect;
   let items = links.map((l) => toItem(l, source));
+  if (mode !== 'link') await fillMissingTitles(items);
   const en = await enrichIfNeeded(items, mode);
   items = applyCategoryRules(en.items, settings);
   let undoToken = null;
@@ -137,7 +156,7 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
     message = `링크 ${items.length}개를 목록에 저장했어요`;
   }
   await chrome.storage.local.set({ [STORAGE.lastGrab]: { at: Date.now(), count: items.length, action } });
-  return { ok: true, message, note: en.note, undoToken, count: items.length, copyPayload };
+  return { ok: true, message, note: en.note, undoToken, count: items.length, copyPayload, titles: items.map((i) => i.title || i.url) };
 }
 
 // ------------------------------------------------------------------ window extraction (popup)
