@@ -275,6 +275,7 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
   border: 0; border-radius: 6px; background: var(--pl-chip); color: var(--pl-text2); font-size: 12px; text-align: left;
 }
 .pl-memo-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-memo-chip--lg span { white-space: pre-line; }
 .pl-memo-chip--lg { padding: 6px 10px; border-radius: 8px; }
 .pl-memo-chip--lg span { white-space: normal; }
 .pl-memo-editor { display: flex; gap: 6px; align-items: center; }
@@ -322,7 +323,12 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 }
 .pl-tab:hover { background: var(--pl-chip); }
 .pl-tab[aria-selected="true"] { color: var(--pl-text); background: var(--pl-chip); border-bottom-color: var(--pl-text); }
-@media (max-width: 440px) { .pl-tab { padding: 0 8px; } .pl-tabs-row { padding-left: 6px; } }
+/* the tab row shrinks with its own width (Chrome zoom / display scaling make the panel narrower
+   than it looks): tighter padding first, then drop the counts, never cut a tab label */
+.pl-tabs-row { container-type: inline-size; }
+@container (max-width: 500px) { .pl-tab { padding: 0 7px; } .pl-tabs { gap: 0; } }
+@container (max-width: 440px) { .pl-tab__n { display: none; } }
+@container (max-width: 380px) { .pl-tab { padding: 0 5px; } .pl-tabs-row .pl-ibtn { width: 26px; } }
 .pl-tab__n { font-size: 11px; font-weight: 400; color: var(--pl-muted); }
 
 .pl-filters { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; border-bottom: 1px solid var(--pl-divider); }
@@ -415,6 +421,15 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-sheet__card { width: 100%; max-width: 320px; padding: 20px; border-radius: 14px; background: var(--pl-bg); border: 1px solid var(--pl-border); box-shadow: var(--pl-shadow-bar); display: flex; flex-direction: column; gap: 8px; animation: pl-in .15s ease; }
 .pl-sheet__title { font-size: 15px; font-weight: 500; }
 .pl-sheet__desc { font-size: 13px; line-height: 1.55; color: var(--pl-text2); }
+.pl-sheet__card--wide { max-width: 440px; gap: 10px; }
+.pl-sheet__subject { font-size: 12px; color: var(--pl-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
+.pl-memo-area {
+  width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--pl-border); border-radius: 10px;
+  background: var(--pl-input); color: var(--pl-text); font-size: 14px; line-height: 1.55; outline: 0;
+}
+.pl-memo-area:focus, .pl-memo-area:focus-visible { border-color: var(--pl-text); outline: none; }
+.pl-memo-area::placeholder { color: var(--pl-muted); }
+.pl-memo-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--pl-muted); margin-top: -4px; }
 .pl-sheet__acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .pl-bar__sep { width: 1px; height: 20px; margin: 0 3px; background: var(--pl-bar-sep); flex-shrink: 0; }
 

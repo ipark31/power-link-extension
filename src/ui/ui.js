@@ -122,6 +122,52 @@ export function confirmModal({ title = '확인', message = '', ok = '확인', ca
   });
 }
 
+// Memo editor modal. Resolves { action: 'save', value } | { action: 'delete' } | { action: 'cancel' }.
+// Enter = 저장 (Shift+Enter = 줄바꿈), Esc / backdrop = 취소. 삭제 appears only when a memo exists.
+export function memoModal({ title = '메모', subject = '', value = '', max = 500 } = {}) {
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    const had = !!String(value).trim();
+    const wrap = document.createElement('div');
+    wrap.className = 'pl-app pl-sheet';
+    wrap.innerHTML = `<div class="pl-sheet__card pl-sheet__card--wide" role="dialog" aria-modal="true" aria-labelledby="plMemoTitle">
+      <div class="pl-sheet__title" id="plMemoTitle"></div>
+      <div class="pl-sheet__subject"></div>
+      <textarea class="pl-memo-area" id="plMemoText" rows="5" maxlength="${max}" aria-label="메모 내용" placeholder="메모를 입력하세요"></textarea>
+      <div class="pl-memo-meta"><span>Enter 저장 · Shift+Enter 줄바꿈</span><span class="pl-memo-count"></span></div>
+      <div class="pl-sheet__acts">
+        ${had ? '<button type="button" class="pl-btn pl-btn--outline" data-act="memoDelete" style="margin-right:auto">삭제</button>' : ''}
+        <button type="button" class="pl-btn" data-act="memoCancel">취소</button>
+        <button type="button" class="pl-btn pl-btn--ink" data-act="memoSave">저장</button>
+      </div>
+    </div>`;
+    wrap.querySelector('.pl-sheet__title').textContent = had ? '메모 수정' : title === '메모' ? '메모 추가' : title;
+    const subj = wrap.querySelector('.pl-sheet__subject');
+    if (subject) subj.textContent = subject; else subj.remove();
+    const ta = wrap.querySelector('textarea');
+    const count = wrap.querySelector('.pl-memo-count');
+    ta.value = value || '';
+    const upd = () => { count.textContent = `${ta.value.length} / ${max}`; };
+    upd();
+    ta.addEventListener('input', upd);
+    const done = (r) => { wrap.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.focus) prev.focus(); resolve(r); };
+    const save = () => done({ action: 'save', value: ta.value.trim() });
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done({ action: 'cancel' }); }
+      else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target === ta) { e.preventDefault(); e.stopPropagation(); save(); }
+    };
+    wrap.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-act]');
+      if (t) { const a = t.dataset.act; if (a === 'memoSave') save(); else if (a === 'memoDelete') done({ action: 'delete' }); else done({ action: 'cancel' }); }
+      else if (!e.target.closest('.pl-sheet__card')) done({ action: 'cancel' });
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(wrap);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  });
+}
+
 // Write text/plain (+ optional text/html) from a focused extension page.
 export async function writeClipboard(text, html) {
   try {

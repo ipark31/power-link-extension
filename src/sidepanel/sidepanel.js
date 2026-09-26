@@ -4,14 +4,14 @@ import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, 
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
-import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal } from '../ui/ui.js';
+import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal, memoModal } from '../ui/ui.js';
 import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
 import { makeZip, safeFileName } from '../shared/zip.js';
 
 const app = document.getElementById('app');
 const S = {
   tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
-  sel: new Set(), open: new Set(), allOpen: false, editing: null, draft: '',
+  sel: new Set(), open: new Set(), allOpen: false,
   rq: '', rsort: 'new', rprof: 'all'
 };
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
@@ -67,13 +67,6 @@ function filtered() {
 }
 
 // ------------------------------------------------------------------ render pieces
-function memoEditor(it) {
-  return `<div class="pl-memo-editor">
-    <input type="text" class="pl-input pl-input--sm" data-memo-input="${it.id}" value="${esc(S.draft)}" placeholder="메모를 입력하고 Enter" aria-label="메모">
-    <button type="button" class="pl-btn pl-btn--ink pl-btn--sm" data-act="memoSave" data-id="${it.id}">저장</button>
-    <button type="button" class="pl-btn pl-btn--sm" data-act="memoCancel">취소</button>
-  </div>`;
-}
 const memoBtn = (it, cls = '') => `<button type="button" class="pl-memo-btn ${cls} ${it.memo ? 'is-on' : ''}" data-act="memo" data-id="${it.id}" aria-label="메모" title="${it.memo ? esc('메모: ' + it.memo) : '메모 추가'}">${icon('memo', 'pl-i--sm')}</button>`;
 const memoChip = (it, lg) => `<button type="button" class="pl-memo-chip${lg ? ' pl-memo-chip--lg' : ''}" data-act="memo" data-id="${it.id}" title="메모 수정">${icon('memoSm', 'pl-i--xs')}<span>${esc(it.memo)}</span></button>`;
 const check = (it, cls = '') => `<input type="checkbox" class="pl-check ${cls}" data-act="sel" data-id="${it.id}" ${S.sel.has(it.id) ? 'checked' : ''} aria-label="선택">`;
@@ -99,7 +92,6 @@ function tile(it) {
       <span class="pl-chan">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(acc ? (it.ids?.handle || it.domain) : chanName(it))}${it.category ? ' · ' + esc(it.category) : ''}</span></span>
       <div class="pl-tile__stat"><span class="pl-trunc">${esc(statLine(it))}</span>${hotTag(it)}${memoBtn(it)}</div>
     </div>
-    ${S.editing === it.id ? memoEditor(it) : ''}
   </div>`;
 }
 
@@ -112,7 +104,7 @@ function rowList(it) {
     <div class="pl-lrow__body">
       <a class="pl-lrow__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it)}</a>
       <span class="pl-lrow__meta">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(meta)}${it.category ? ' · ' + esc(it.category) : ''}</span>${hotTag(it)}</span>
-      ${S.editing === it.id ? `<div class="pl-lrow__edit">${memoEditor(it)}</div>` : it.memo ? memoChip(it) : ''}
+      ${it.memo ? memoChip(it) : ''}
     </div>
     ${memoBtn(it, 'pl-memo-btn--md')}
   </div>`;
@@ -179,7 +171,7 @@ function rowDetail(it) {
     </div>` : ''}
     ${chbox}
     ${acts}
-    ${S.editing === it.id ? `<div class="pl-drow__in">${memoEditor(it)}</div>` : it.memo ? `<div class="pl-drow__in">${memoChip(it, true)}</div>` : ''}
+    ${it.memo ? `<div class="pl-drow__in">${memoChip(it, true)}</div>` : ''}
   </div>`;
 }
 
@@ -460,7 +452,7 @@ function renderWatch() {
 // ------------------------------------------------------------------ frame
 function render() {
   const active = document.activeElement;
-  const refocus = active && active.id ? active.id : active && active.dataset && active.dataset.memoInput ? 'memo' : null;
+  const refocus = active && active.id ? active.id : null;
   const selStart = active && active.selectionStart;
   const dark = currentTheme() === 'dark';
   // One header row only: Chrome already draws the panel title bar (icon · "Power Link v…" · pin · ✕)
@@ -477,8 +469,7 @@ function render() {
       </div>
     </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
-  if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-  else if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
+  if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
 }
 
 // ------------------------------------------------------------------ actions
@@ -487,10 +478,19 @@ const selected = () => (S.sel.size ? links.filter((l) => S.sel.has(l.id)) : filt
 const targetIds = () => selected().map((l) => l.id);
 const report = (r) => toast(r?.message || (r?.ok ? '완료했어요' : '처리하지 못했어요'), r?.ok ? 'success' : 'error');
 
-async function saveMemo(id) {
-  const text = (S.draft || '').trim();
-  S.editing = null;
-  await updateLink(id, { memo: text });
+// Memo: add / edit / delete in a modal (one field, room for several lines)
+async function editMemo(id) {
+  const it = links.find((l) => l.id === id);
+  if (!it) return;
+  const r = await memoModal({ subject: it.title || it.url, value: it.memo || '' });
+  if (r.action === 'save') {
+    if ((r.value || '') === (it.memo || '')) return;
+    await updateLink(id, { memo: r.value });
+    toast(r.value ? (it.memo ? '메모를 수정했어요' : '메모를 추가했어요') : '메모를 지웠어요');
+  } else if (r.action === 'delete') {
+    await updateLink(id, { memo: '' });
+    toast('메모를 삭제했어요');
+  }
 }
 
 function downloadXls(items) {
@@ -616,9 +616,7 @@ app.addEventListener('click', async (e) => {
     case 'expand': if (S.allOpen) { S.allOpen = false; filtered().forEach((l) => S.open.add(l.id)); } S.open.has(id) ? S.open.delete(id) : S.open.add(id); break;
     case 'sel': S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); break;
     case 'selAll': { const list = filtered(); const all = list.every((l) => S.sel.has(l.id)); list.forEach((l) => (all ? S.sel.delete(l.id) : S.sel.add(l.id))); break; }
-    case 'memo': { const it = links.find((l) => l.id === id); S.editing = id; S.draft = it?.memo || ''; break; }
-    case 'memoSave': await saveMemo(id); return;
-    case 'memoCancel': S.editing = null; break;
+    case 'memo': await editMemo(id); return;
     case 'watchOne': report(await send({ type: 'pl:watchAdd', ids: [id] })); return;
     case 'options': chrome.runtime.openOptionsPage(); return;
     case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
@@ -643,19 +641,12 @@ app.addEventListener('click', async (e) => {
 app.addEventListener('input', (e) => {
   if (e.target.id === 'q') { S.q = e.target.value; render(); }
   if (e.target.id === 'rq') { S.rq = e.target.value; render(); }
-  if (e.target.dataset.memoInput) S.draft = e.target.value;
 });
 app.addEventListener('change', async (e) => {
   if (e.target.id === 'cat') { S.cat = e.target.value; render(); }
   if (e.target.id === 'kind') { S.kind = e.target.value; render(); }
   if (e.target.id === 'sort') { S.sort = e.target.value; render(); }
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
-});
-app.addEventListener('keydown', async (e) => {
-  const id = e.target.dataset && e.target.dataset.memoInput;
-  if (!id) return;
-  if (e.key === 'Enter') { e.preventDefault(); await saveMemo(id); }
-  if (e.key === 'Escape') { S.editing = null; render(); }
 });
 
 chrome.storage.onChanged.addListener(async (ch, area) => {

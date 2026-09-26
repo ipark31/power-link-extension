@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Power Link v2.5.0",
-  "version": "2.5.0",
-  "version_name": "2.5.0",
+  "name": "Power Link v2.5.1",
+  "version": "2.5.1",
+  "version_name": "2.5.1",
   "description": "드래그로 링크를 모으고, 유튜브·틱톡·인스타그램·X·블로그 링크를 카드·표로 정리하는 크리에이터용 링크 수집기.",
   "author": "ipark31",
   "minimum_chrome_version": "116",
