@@ -71,6 +71,7 @@ async function capture(dpr) {
   await wait(1200);
   const id = sw.url().split('/')[2];
   const open = await ctx.newPage(); await open.goto('http://localhost:8776/' + encodeURIComponent('유튜브 수익화 필수 조건 정리'));
+  const dup = await ctx.newPage(); await dup.goto('http://localhost:8776/' + encodeURIComponent('유튜브 수익화 필수 조건 정리')); // a duplicate tab for the bottom bar
   await wait(1500); // let the service worker finish recording the open tab before seeding
   await sw.evaluate(async ({ LINKS, RECENT, OTHERS }) => {
     await chrome.storage.local.set({ pl_links: LINKS, pl_recent: RECENT, pl_recentOthers: OTHERS, pl_bridge: { connected: true, at: Date.now() }, pl_ytApiKey: 'SCREENSHOT-KEY', pl_profileName: '개인용' });
@@ -97,6 +98,9 @@ async function capture(dpr) {
     await sp.click('[data-act="tab"][data-val="recent"]'); await wait(900);
     await sp.hover('.pl-recent:has(.pl-recent__open)'); await wait(200); // open row: [탭 닫기] [+] [삭제]
     await shot(sp, `sidepanel-recent-${theme}`);
+    await sp.click('[data-act="rDedupe"]'); await wait(250);
+    await shot(sp, `sidepanel-recent-dedupe-${theme}`);
+    await sp.click('.pl-sheet [data-act="confirmNo"] >> text=아니요');
     await sp.close();
     // popup
     const pop = await ctx.newPage();

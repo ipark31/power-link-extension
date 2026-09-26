@@ -403,6 +403,16 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-bar__count { font-size: 13px; font-weight: 500; margin-right: auto; white-space: nowrap; }
 .pl-bar__btn { width: 32px; height: 32px; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--pl-bar-icon); display: grid; place-items: center; }
 .pl-bar__btn:hover { background: rgba(255, 255, 255, .12); color: var(--pl-bar-text); }
+.pl-bar__action { height: 32px; padding: 0 12px; flex-shrink: 0; border: 0; border-radius: 16px; background: none; color: var(--pl-bar-text); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.pl-bar__action .pl-i { color: var(--pl-bar-icon); }
+.pl-bar__action:hover { background: rgba(255, 255, 255, .12); }
+
+/* confirmation sheet (inside the panel; the viewer never shows native dialogs) */
+.pl-sheet { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .45); }
+.pl-sheet__card { width: 100%; max-width: 320px; padding: 20px; border-radius: 14px; background: var(--pl-bg); border: 1px solid var(--pl-border); box-shadow: var(--pl-shadow-bar); display: flex; flex-direction: column; gap: 8px; animation: pl-in .15s ease; }
+.pl-sheet__title { font-size: 15px; font-weight: 500; }
+.pl-sheet__desc { font-size: 13px; line-height: 1.55; color: var(--pl-text2); }
+.pl-sheet__acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .pl-bar__sep { width: 1px; height: 20px; margin: 0 3px; background: var(--pl-bar-sep); flex-shrink: 0; }
 
 /* recent screens */

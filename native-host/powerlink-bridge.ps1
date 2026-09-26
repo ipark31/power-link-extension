@@ -1,6 +1,7 @@
 # Power Link bridge host — Chrome native messaging (Windows PowerShell 5.1)
 # Protocol: 4-byte little-endian length + UTF-8 JSON over stdin/stdout.
 # Accepted messages: hello / recent / command / ping — nothing else.
+# Commands between profiles: activate / forget / close (a URL) — nothing else.
 # The host never launches programs and only touches profile-*.json / cmd-*.json
 # files inside its own data directory.
 #
@@ -120,7 +121,7 @@ function Read-MyCommands {
       $c = [System.IO.File]::ReadAllText($f.FullName, $Enc) | ConvertFrom-Json
       $type = [string]$c.command.type
       $url = [string]$c.command.url
-      if (($type -eq 'activate' -or $type -eq 'forget') -and $url -match '^https?://') {
+      if (($type -eq 'activate' -or $type -eq 'forget' -or $type -eq 'close') -and $url -match '^https?://') {
         Send-Msg @{ type = 'command'; command = @{ type = $type; url = $url } }
       }
     } catch { }
@@ -153,7 +154,7 @@ function Invoke-Message($m) {
     $target = Get-CleanId $m.target
     $ctype = [string]$m.command.type
     $url = [string]$m.command.url
-    if (-not $target -or ($ctype -ne 'activate' -and $ctype -ne 'forget') -or $url -notmatch '^https?://' -or $url.Length -gt 4096) { return }
+    if (-not $target -or ($ctype -ne 'activate' -and $ctype -ne 'forget' -and $ctype -ne 'close') -or $url -notmatch '^https?://' -or $url.Length -gt 4096) { return }
     $obj = @{ from = $script:ProfileId; at = (Get-NowMs); command = @{ type = $ctype; url = $url } }
     $path = Join-Path $DataDir ("cmd-" + $target + "-" + [Guid]::NewGuid().ToString('N') + ".json")
     [System.IO.File]::WriteAllText($path, (ConvertTo-Json -InputObject $obj -Depth 5 -Compress), $Enc)

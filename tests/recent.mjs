@@ -56,6 +56,17 @@ ok('추가 후 버튼이 체크로 바뀜', (await sp.locator('[data-act="rAdd"]
 // delete
 await sp.click(`[data-act="rDel"][data-val="http://localhost:8772/beta"]`); await sp.waitForTimeout(400);
 ok('삭제', !(await recent()).some(r => r.url.endsWith('/beta')) && !(await titles()).some(x => x.includes('beta')));
+// duplicate tabs: bottom bar → confirm → one tab per screen
+for (let i = 0; i < 3; i++) { const p = await ctx.newPage(); await p.goto('http://localhost:8772/dup'); }
+await sp.bringToFront(); await sp.click('[data-act="tab"][data-val="links"]'); await sp.click('[data-act="tab"][data-val="recent"]'); await sp.waitForTimeout(500);
+ok('하단 바에 중복 개수 표시', (await sp.locator('.pl-bar__count').innerText()).includes('중복'), await sp.locator('.pl-bar__count').innerText());
+await sp.click('[data-act="rDedupe"]'); await sp.waitForTimeout(200);
+ok('중복 링크 닫기 → 확인 창', (await sp.locator('.pl-sheet [data-act="confirmYes"]').count()) === 1);
+await sp.click('.pl-sheet [data-act="confirmNo"] >> text=아니요'); await sp.waitForTimeout(200);
+const dupN = () => sw.evaluate(async () => (await chrome.tabs.query({ url: 'http://localhost:8772/dup' })).length);
+ok('아니요 → 아무것도 닫지 않음', (await sp.locator('.pl-sheet').count()) === 0 && (await dupN()) === 3);
+await sp.click('[data-act="rDedupe"]'); await sp.click('.pl-sheet [data-act="confirmYes"]'); await sp.waitForTimeout(800);
+ok('예 → 중복 탭을 닫고 1개만 남김', (await dupN()) === 1, `남은 dup 탭 ${await dupN()}개`);
 // max setting
 await sw.evaluate(async () => { const { pl_settings: s = {} } = await chrome.storage.sync.get('pl_settings'); await chrome.storage.sync.set({ pl_settings: Object.assign(s, { recentMax: 20 }) }); });
 const p2 = await ctx.newPage();

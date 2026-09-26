@@ -242,9 +242,50 @@ function renderLinks() {
 // ------------------------------------------------------------------ recent screens
 const rkey = (u) => { try { const x = new URL(u); x.hash = ''; return x.href; } catch (e) { return u; } };
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
+let openTabList = []; // every tab of this profile (openTabs keeps one per screen)
 async function refreshOpenTabs() {
   const tabs = await chrome.tabs.query({});
-  openTabs = new Map(tabs.filter((t) => t.url).map((t) => [rkey(t.url), t]));
+  openTabList = tabs.filter((t) => t.url);
+  openTabs = new Map(openTabList.map((t) => [rkey(t.url), t]));
+}
+
+// "중복 링크 닫기": one tab per screen survives.
+// - inside this profile: keep pinned > active > most recently used, close the rest
+// - across profiles: this profile wins when it has the screen open; otherwise the first online
+//   profile that lists it keeps it. Offline profiles are left alone (their tabs would close
+//   unexpectedly the next time they start).
+function duplicatePlan() {
+  const groups = new Map();
+  for (const t of openTabList) { const k = rkey(t.url); if (/^https?:/i.test(t.url)) (groups.get(k) || groups.set(k, []).get(k)).push(t); }
+  const localClose = [];
+  for (const tabs of groups.values()) {
+    if (tabs.length < 2) continue;
+    const keep = [...tabs].sort((a, b) => (b.pinned - a.pinned) || (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)))[0];
+    tabs.forEach((t) => { if (t !== keep && !t.pinned) localClose.push(t.id); });
+  }
+  const owner = new Map(); // screen key → 'me' | profile id
+  for (const k of groups.keys()) owner.set(k, 'me');
+  const remote = [];
+  for (const p of otherProfiles().filter((x) => x.online)) {
+    const seen = new Set();
+    for (const it of p.items) {
+      const k = rkey(it.url);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (!owner.has(k)) owner.set(k, p.id);
+      else if (owner.get(k) !== p.id) remote.push({ pid: p.id, name: p.name, url: it.url });
+    }
+  }
+  return { localClose, remote, count: localClose.length + remote.length };
+}
+async function closeDuplicates() {
+  await refreshOpenTabs();
+  const plan = duplicatePlan();
+  if (plan.localClose.length) await chrome.tabs.remove(plan.localClose);
+  let sent = 0;
+  for (const r of plan.remote) { const res = await send({ type: 'pl:bridgeSend', target: r.pid, command: { type: 'close', url: r.url } }); if (res.ok) sent++; }
+  await refreshOpenTabs();
+  toast(plan.count ? `중복 탭 ${plan.localClose.length}개를 닫았어요${sent ? ` · 다른 프로필에 ${sent}개 닫기 요청` : ''}` : '닫을 중복 링크가 없어요', plan.count ? 'success' : 'warning');
 }
 // YouTube video id from watch / shorts / youtu.be / embed URLs
 function ytVideoId(u) {
@@ -325,6 +366,7 @@ function renderRecent() {
       <button type="button" class="pl-btn pl-btn--sm" data-act="rBridgeRetry" style="align-self:flex-start;">다시 연결</button>
     </div>`;
   const total = recentMerged().length;
+  const dupCount = duplicatePlan().count;
   return `
   <div class="pl-filters">
     <label class="pl-search">${icon('search')}<input type="text" id="rq" placeholder="제목, 주소 검색" value="${esc(S.rq)}" aria-label="검색"></label>
@@ -335,7 +377,11 @@ function renderRecent() {
       <div class="pl-seg" role="group" aria-label="정렬">${[['new', '최근 순'], ['old', '오래된 순']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-scroll">${notice}${list.length ? `<div class="pl-recent-list">${list.map((r) => recentRow(r, saved)).join('')}</div>` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>`;
+  <div class="pl-scroll pl-scroll--bar">${notice}${list.length ? `<div class="pl-recent-list">${list.map((r) => recentRow(r, saved)).join('')}</div>` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>
+  <div class="pl-bar" role="toolbar" aria-label="최근 화면 작업">
+    <span class="pl-bar__count">${dupCount ? `중복 ${dupCount}개` : `열린 탭 ${openTabList.length}개`}</span>
+    <button type="button" class="pl-bar__action" data-act="rDedupe" title="같은 주소로 여러 개 열린 탭을 1개만 남기고 닫아요">${icon('copy', 'pl-i--md')}중복 링크 닫기</button>
+  </div>`;
 }
 async function goRecent(url) {
   const k = rkey(url);
@@ -433,7 +479,19 @@ function render() {
     <nav class="pl-tabs" role="tablist">
       ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
     </nav>
-    ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
+    ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}
+    ${S.confirm === 'dedupe' ? `
+    <div class="pl-sheet" data-act="confirmNo">
+      <div class="pl-sheet__card" role="alertdialog" aria-modal="true" aria-labelledby="sheetTitle" aria-describedby="sheetDesc">
+        <div class="pl-sheet__title" id="sheetTitle">중복 링크 닫기</div>
+        <p class="pl-sheet__desc" id="sheetDesc">중복된 링크를 닫고 1개만 남깁니다.<br>이 프로필에 열린 탭을 우선으로 남기고 나머지는 닫아요.</p>
+        <div class="pl-sheet__acts">
+          <button type="button" class="pl-btn" data-act="confirmNo">아니요</button>
+          <button type="button" class="pl-btn pl-btn--ink" data-act="confirmYes" autofocus>예</button>
+        </div>
+      </div>
+    </div>` : ''}`;
+  if (S.confirm) { const b = app.querySelector('[data-act="confirmYes"]'); if (b) b.focus(); return; }
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   else if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
 }
@@ -554,6 +612,9 @@ app.addEventListener('click', async (e) => {
       } else await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val)));
       return;
     case 'rClose': await closeRecent(val); await refreshOpenTabs(); break;
+    case 'rDedupe': await refreshOpenTabs(); S.confirm = 'dedupe'; break;
+    case 'confirmNo': if (e.target.closest('.pl-sheet__card') && t.classList.contains('pl-sheet')) return; S.confirm = null; break;
+    case 'confirmYes': S.confirm = null; render(); await closeDuplicates(); break;
     case 'rAdd': { const r = recentMerged().find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
     case 'rBridgeRetry': {
       toast('도우미에 연결하는 중…', 'warning');
@@ -606,6 +667,7 @@ app.addEventListener('change', async (e) => {
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
 });
 app.addEventListener('keydown', async (e) => {
+  if (S.confirm && e.key === 'Escape') { S.confirm = null; render(); return; }
   const id = e.target.dataset && e.target.dataset.memoInput;
   if (!id) return;
   if (e.key === 'Enter') { e.preventDefault(); await saveMemo(id); }

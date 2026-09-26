@@ -127,6 +127,10 @@ async function bridgeHandleCommand(cmd) {
     const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
     const next = list.filter((r) => recentKey(r.url) !== k);
     if (next.length !== list.length) await chrome.storage.local.set({ [STORAGE.recent]: next });
+  } else if (cmd.type === 'close') {
+    // another profile keeps this screen open ("중복 링크 닫기") — close ours; pinned tabs stay
+    const ids = (await chrome.tabs.query({})).filter((t) => !t.pinned && t.url && recentKey(t.url) === k).map((t) => t.id);
+    if (ids.length) await chrome.tabs.remove(ids);
   }
 }
 

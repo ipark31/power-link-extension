@@ -124,6 +124,14 @@ try {
   await spB.click('[data-act="rAdd"][data-val="http://localhost:8773/alpha"]');
   ok('다른 프로필 항목을 수집 링크에 추가', await until(async () => (await swB.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || [])).some((l) => l.url.endsWith('/alpha'))));
 
+  // 7-1) 중복 링크 닫기: A와 B 모두 alpha가 열려 있으면 A(현재 프로필)를 남기고 B의 탭을 닫음
+  const pB2 = await B.newPage(); await pB2.goto('http://localhost:8773/alpha'); await pB2.bringToFront(); await wait(400);
+  await until(async () => ((await othersOf(swA)).profiles.find((x) => x.name === '개인용')?.items || []).some((i) => i.url.endsWith('/alpha')));
+  await spA.bringToFront(); await spA.click('[data-act="tab"][data-val="links"]'); await spA.click('[data-act="tab"][data-val="recent"]'); await wait(500);
+  await spA.click('[data-act="rDedupe"]'); await spA.click('.pl-sheet [data-act="confirmYes"]');
+  const alphaIn = (sw) => sw.evaluate(async () => (await chrome.tabs.query({ url: 'http://localhost:8773/alpha' })).length);
+  ok('중복 링크 닫기: 현재 프로필 우선, 다른 프로필 탭 닫힘', await until(async () => (await alphaIn(swB)) === 0 && (await alphaIn(swA)) === 1), `A ${await alphaIn(swA)}개 / B ${await alphaIn(swB)}개`);
+
   // 8) 오프라인: A 종료 → 회색(is-offline) 표시, 클릭하면 현재 프로필에서 새 탭
   await A.close(); A = null;
   ok('오프라인 표시', await until(async () => (await spB.locator('.pl-recent.is-offline').count()) >= 1, 15000));
