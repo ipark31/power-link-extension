@@ -362,10 +362,38 @@
     marks = new Map();
     clearInterval(marksTimer); marksTimer = 0;
   }
-  function placeOutline(el, a) {
+  // Ancestors that clip their content (overflow ≠ visible): a link scrolled out of such a box must
+  // not keep an outline floating outside it. Looked up once per link, intersected on every layout.
+  const clipCache = new WeakMap();
+  function clippers(a) {
+    let list = clipCache.get(a);
+    if (list) return list;
+    list = [];
+    for (let p = a.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') list.push(p);
+      if (cs.position === 'fixed') break;
+    }
+    clipCache.set(a, list);
+    return list;
+  }
+  function visibleRect(a) {
     const r = a.getBoundingClientRect();
+    let x1 = r.left, y1 = r.top, x2 = r.right, y2 = r.bottom;
+    for (const p of clippers(a)) {
+      const c = p.getBoundingClientRect();
+      x1 = Math.max(x1, c.left); y1 = Math.max(y1, c.top); x2 = Math.min(x2, c.right); y2 = Math.min(y2, c.bottom);
+    }
+    return x2 - x1 >= 1 && y2 - y1 >= 1 ? { left: x1, top: y1, width: x2 - x1, height: y2 - y1 } : null;
+  }
+  // returns false when the link is not visible (outline hidden)
+  function placeOutline(el, a) {
+    const r = visibleRect(a);
+    el.style.display = r ? '' : 'none';
+    if (!r) return false;
     el.style.left = r.left + scrollX - 2 + 'px'; el.style.top = r.top + scrollY - 2 + 'px';
     el.style.width = r.width + 4 + 'px'; el.style.height = r.height + 4 + 'px';
+    return true;
   }
   function markUrls(keys, tone, saved) {
     if (!keys.size) return;
@@ -389,9 +417,37 @@
       placeOutline(el, a);
     }
     syncMarks();
-    // SPA sites (YouTube…) change the address without reloading: drop marks from the old page
-    if (!marksTimer) marksTimer = setInterval(() => { if (location.href !== marksHref) clearMarks(); }, 1000);
+    // SPA sites (YouTube…) change the address without reloading: drop marks from the old page.
+    // Otherwise re-measure once a second so outlines follow content that moved on its own.
+    if (!marksTimer) marksTimer = setInterval(() => { if (location.href !== marksHref) clearMarks(); else scheduleRelayout(); }, 1000);
+    watchLayout();
   }
+  // Outlines are page coordinates taken when marking. Anything that re-lays out the page (window
+  // resize, browser zoom, side-panel width, fonts/images loading, inner scrollers) moves the links,
+  // so every outline is re-measured from its link. Links that were re-rendered (YouTube swaps card
+  // elements) are found again by URL.
+  let relayoutRaf = 0, layoutRO = null;
+  function relayoutMarks() {
+    relayoutRaf = 0;
+    const rebind = [];
+    for (const [k, m] of marks) {
+      for (const [a, el] of m.els) {
+        if (!a.isConnected) { el.remove(); m.els.delete(a); continue; }
+        placeOutline(el, a);
+      }
+      if (!m.els.size) rebind.push([k, m]);
+    }
+    for (const [k, m] of rebind) markUrls(new Set([k]), m.tone, m.saved);
+    syncMarks();
+  }
+  function scheduleRelayout() { if (marks.size && !relayoutRaf) relayoutRaf = requestAnimationFrame(relayoutMarks); }
+  function watchLayout() {
+    if (layoutRO || !globalThis.ResizeObserver) return;
+    layoutRO = new ResizeObserver(scheduleRelayout);
+    layoutRO.observe(document.documentElement);
+    if (document.body) layoutRO.observe(document.body);
+  }
+  addEventListener('resize', scheduleRelayout, { passive: true });
   function unmarkUrls(keys) {
     for (const k of keys) {
       const m = marks.get(k);
@@ -400,7 +456,12 @@
       marks.delete(k);
     }
   }
-  addEventListener('scroll', () => { if (marksTimer && !marksRaf) marksRaf = requestAnimationFrame(syncMarks); }, { capture: true, passive: true });
+  addEventListener('scroll', (e) => {
+    if (!marksTimer) return;
+    // window scroll: shift the whole layer; an inner scroller moved only its own links: re-measure
+    if (e.target === document || e.target === document.documentElement || e.target === document.body) { if (!marksRaf) marksRaf = requestAnimationFrame(syncMarks); }
+    else scheduleRelayout();
+  }, { capture: true, passive: true });
   // side panel deleted links → drop their outlines (only outlines whose link went into the list)
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
