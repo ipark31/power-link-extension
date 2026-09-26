@@ -300,6 +300,7 @@ function recentRow(r, saved) {
     </button>
     ${p ? `<span class="pl-ptag" title="${p.online ? '온라인' : '오프라인'} 프로필">${icon('person', 'pl-i--xs')}<span>${esc(p.name)}</span></span>` : ''}
     <div class="pl-recent__acts">
+      ${isOpen ? `<button type="button" class="pl-ibtn" data-act="rClose" data-val="${esc(r.url)}" aria-label="탭 닫기" title="열려 있는 탭 닫기">${icon('close', 'pl-i--md')}</button>` : ''}
       <button type="button" class="pl-ibtn" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" title="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--md')}</button>
       <button type="button" class="pl-ibtn" data-act="rDel" data-val="${esc(r.url)}"${pAttrs} aria-label="목록에서 삭제" title="${p ? '그 프로필의 목록에서 삭제' : '목록에서 삭제'}">${icon('trash', 'pl-i--md')}</button>
     </div>
@@ -356,6 +357,14 @@ async function goRecentOther(url, pid, online, name) {
   }
   await chrome.tabs.create({ url, active: true });
   toast(`‘${name}’ 프로필이 오프라인이라 이 프로필에서 새 탭으로 열었어요`, 'warning');
+}
+// Close every tab of this profile showing that screen; the record stays in the list.
+async function closeRecent(url) {
+  const k = rkey(url);
+  const ids = (await chrome.tabs.query({})).filter((t) => t.url && rkey(t.url) === k).map((t) => t.id);
+  if (!ids.length) { toast('이미 닫힌 탭이에요', 'warning'); return; }
+  await chrome.tabs.remove(ids);
+  toast(ids.length > 1 ? `탭 ${ids.length}개를 닫았어요` : '탭을 닫았어요');
 }
 async function setRecent(list) { await chrome.storage.local.set({ [STORAGE.recent]: list }); }
 
@@ -544,6 +553,7 @@ app.addEventListener('click', async (e) => {
         toast(r.ok ? (t.dataset.on === '1' ? '삭제를 요청했어요' : '오프라인 프로필이에요 — 다시 접속하면 삭제돼요') : r.message || '삭제를 요청하지 못했어요', r.ok ? 'success' : 'error');
       } else await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val)));
       return;
+    case 'rClose': await closeRecent(val); await refreshOpenTabs(); break;
     case 'rAdd': { const r = recentMerged().find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
     case 'rBridgeRetry': {
       toast('도우미에 연결하는 중…', 'warning');

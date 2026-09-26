@@ -95,7 +95,7 @@ async function capture(dpr) {
     await sp.click('[data-act="expand"][data-id="v1"]'); await wait(300);
     await shot(sp, `sidepanel-detail-${theme}`);
     await sp.click('[data-act="tab"][data-val="recent"]'); await wait(900);
-    await sp.hover('.pl-recent >> nth=2'); await wait(200);
+    await sp.hover('.pl-recent:has(.pl-recent__open)'); await wait(200); // open row: [탭 닫기] [+] [삭제]
     await shot(sp, `sidepanel-recent-${theme}`);
     await sp.close();
     // popup

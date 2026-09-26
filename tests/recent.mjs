@@ -34,6 +34,14 @@ const before = ctx.pages().length;
 await sp.click(`[data-act="rGo"][data-val="http://localhost:8772/gamma"]`); await sp.waitForTimeout(600);
 const act = await sw.evaluate(async () => (await chrome.tabs.query({ active: true, url: 'http://localhost:8772/*' })).map(t => t.url));
 ok('열린 화면 클릭 → 그 탭으로 이동', ctx.pages().length === before && act.some(u => u.endsWith('/gamma')), act.join(','));
+// close button: only on open rows; closes the tab, keeps the record
+await sp.bringToFront();
+await sp.hover(`[data-act="rGo"][data-val="http://localhost:8772/alpha"]`);
+const closeBtn = sp.locator(`[data-act="rClose"][data-val="http://localhost:8772/alpha"]`);
+ok('열린 화면에 탭 닫기 버튼', (await closeBtn.count()) === 1);
+await closeBtn.click(); await sp.waitForTimeout(700);
+const alphaTabs = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'http://localhost:8772/alpha' })).length);
+ok('탭 닫기 → 탭이 닫히고 기록은 남음', alphaTabs === 0 && (await recent()).some((r) => r.url.endsWith('/alpha')) && (await sp.locator(`[data-act="rClose"][data-val="http://localhost:8772/alpha"]`).count()) === 0, `열린 alpha 탭 ${alphaTabs}개`);
 // close delta then click → reopens
 await pages[3].close(); await sp.waitForTimeout(500);
 ok('닫은 화면은 열림 표시 없음', !(await sp.locator('.pl-recent', { hasText: '페이지 delta' }).locator('.pl-recent__open').count()));
