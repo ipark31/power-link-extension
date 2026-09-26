@@ -2,6 +2,12 @@
 
 버전 규칙: `MAJOR.MINOR.PATCH` (manifest.json의 `version`과 git 태그 `v<버전>`을 항상 맞춥니다)
 
+## [2.1.1] - 2026-09-26
+
+### 수정
+- `native-host\install.bat`·`uninstall.bat`이 한글 안내 문구 때문에 cmd에서 깨져 실행되지 않던 문제
+  → 배치 파일을 ASCII 전용으로 변경 (한글 설치 안내는 [native-host/README.md](native-host/README.md))
+
 ## [2.1.0] - 2026-09-26
 
 ### 추가
