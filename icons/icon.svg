@@ -1,11 +1,12 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="128" height="128" rx="26" fill="#FF4B4B"/>
-  
-  <g stroke="white" stroke-width="8" stroke-linecap="round">
-    <path d="M75 35L85 45C92 52 92 63 85 70L75 80" stroke-width="10"/>
-    <path d="M53 48L43 58C36 65 36 76 43 83L53 93" stroke-width="10"/>
-    <path d="M55 73L73 55" stroke-width="10"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="ga" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F2229"/><stop offset="1" stop-color="#050608"/></linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#ga)"/>
+  <rect x="1.5" y="1.5" width="125" height="125" rx="28.5" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="3"/>
+  <g fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 48V34a6 6 0 0 1 6-6h14"/><path d="M80 28h14a6 6 0 0 1 6 6v14"/>
+    <path d="M28 80v14a6 6 0 0 0 6 6h14"/>
   </g>
-  
-  <text x="64" y="112" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">POWER LINK</text>
+  <path d="M62 60l38 14-16 5 11 17-8 5-11-17-11 12z" fill="#4CFF3F" stroke="#4CFF3F" stroke-width="4" stroke-linejoin="round"/>
 </svg>

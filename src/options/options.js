@@ -205,7 +205,7 @@ function viewGeneral() {
     ${row('수집 목록 모두 지우기', `사이드바 목록 ${linkCount}개가 삭제돼요. 되돌릴 수 없어요.`, `<button type="button" class="pl-btn pl-btn--danger" id="clearLinks">모두 지우기</button>`, true)}
   </section>
   <section class="pl-card pl-card--lg pl-card--pad-lg pl-head" style="gap:12px;">
-    <span class="pl-brand__mark pl-brand__mark--lg">${icon('link')}</span>
+    <span class="pl-brand__mark pl-brand__mark--lg"><img class="pl-brand__logo" src="../../icons/icon.svg" alt=""></span>
     <div class="pl-u-grow"><div class="pl-row__title">Power Link v${version()}</div><div class="pl-row__desc">링크 수집 · 카드 복사 · 유튜브 분석 확장 프로그램</div></div>
     <a class="pl-btn" href="https://github.com/ipark31/power-link-extension/releases" target="_blank" rel="noopener">릴리스 노트</a>
   </section>`;
@@ -216,7 +216,7 @@ function render() {
   app.innerHTML = `
   <aside class="pl-options__aside">
     <div class="pl-brand" style="padding:0 8px 20px;gap:10px;">
-      <span class="pl-brand__mark pl-brand__mark--lg">${icon('link')}</span>
+      <span class="pl-brand__mark pl-brand__mark--lg"><img class="pl-brand__logo" src="../../icons/icon.svg" alt=""></span>
       <div style="display:flex;flex-direction:column;"><span style="font-size:15px;">Power Link</span><span class="pl-caption" style="font-weight:400;">설정</span></div>
     </div>
     <nav class="pl-nav">${NAV.map(([id, label, ic]) => `<button type="button" class="pl-nav__item" aria-current="${tab === id ? 'page' : 'false'}" data-nav="${id}">${icon(ic)}${label}${id === 'api' && apiKey ? '<span class="pl-badge" data-tone="success">연결됨</span>' : ''}</button>`).join('')}</nav>

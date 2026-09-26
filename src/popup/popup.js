@@ -33,7 +33,7 @@ function render() {
   const rules = settings.rules.filter((r) => r.enabled !== false);
   app.innerHTML = `
   <header class="pl-popup__header">
-    <span class="pl-brand"><span class="pl-brand__mark">${icon('link')}</span>Power Link</span>
+    <span class="pl-brand"><span class="pl-brand__mark"><img class="pl-brand__logo" src="../../icons/icon.svg" alt=""></span>Power Link</span>
     <span class="pl-u-grow"></span>
     <button type="button" class="pl-btn pl-btn--soft pl-btn--sm" id="openPanel">${icon('sidebar', 'pl-i--sm')}수집 링크 <b class="pl-u-mono pl-u-accent">${linkCount}</b></button>
     <button type="button" class="pl-icon-btn" id="openOptions" aria-label="설정" data-tip="설정" data-tip-align="end" data-tip-pos="below">${icon('sliders')}</button>

@@ -296,7 +296,6 @@ function render() {
   const selStart = active && active.selectionStart;
   app.innerHTML = `
     <header class="pl-panel__head pl-panel__head--tabs">
-      <span class="pl-brand__mark pl-brand__mark--sm" title="Power Link">${icon('link')}</span>
       <nav class="pl-tabs pl-tabs--inline" role="tablist">
         ${[['links', '수집 링크', links.length], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
       </nav>
