@@ -22,6 +22,11 @@ jobs:
             echo "Tag v$TAG does not match manifest version $VER" >&2
             exit 1
           fi
+          NAME=$(node -p "require('./manifest.json').name")
+          if [ "$NAME" != "Power Link v$VER" ]; then
+            echo "manifest name '$NAME' must be 'Power Link v$VER' (run scripts/bump.sh)" >&2
+            exit 1
+          fi
 
       - name: Build zip
         run: bash scripts/build.sh

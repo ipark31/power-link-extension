@@ -299,8 +299,7 @@ function render() {
       <nav class="pl-tabs pl-tabs--inline" role="tablist">
         ${[['links', '수집 링크', links.length], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__count">${n}</span>` : ''}</button>`).join('')}
       </nav>
-      <span class="pl-badge pl-badge--mono pl-u-push" title="버전">v${version()}</span>
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="options" aria-label="설정" data-tip="설정" data-tip-pos="below" data-tip-align="end">${icon('sliders')}</button>
+      <button type="button" class="pl-icon-btn pl-icon-btn--sm pl-u-push" data-act="options" aria-label="설정" data-tip="설정" data-tip-pos="below" data-tip-align="end">${icon('sliders')}</button>
     </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
   if (refocus === 'memo' || (S.editing && refocus !== 'q')) { const el = app.querySelector('[data-memo-input]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
