@@ -2,6 +2,29 @@
 
 버전 규칙: `MAJOR.MINOR.PATCH` (manifest.json의 `version`과 git 태그 `v<버전>`을 항상 맞춥니다)
 
+## [2.1.0] - 2026-09-26
+
+### 추가
+- **다른 크롬 프로필 연동**: 다른 프로필에서 본 탭도 사이드바 ‘최근 화면’에 함께 표시
+  - 항목마다 프로필 이름 배지 표시 (설정 › 일반 › **이 프로필 이름**), 오프라인 프로필은 회색
+  - 다른 프로필 항목 클릭 → **그 프로필**에서 열려 있으면 그 탭·창으로 이동, 닫혀 있으면 그 프로필에서 새 탭
+    (프로필이 꺼져 있으면 현재 프로필에서 새 탭으로 열고 안내)
+  - 삭제 버튼 → 그 프로필의 최근 화면에서 삭제. ‘수집 링크에 추가’·검색·정렬·유튜브 썸네일은 다른 프로필 항목에도 동일 적용
+  - 도우미 미설치/연결 끊김이면 최근 화면 상단에 설치 안내와 ‘다시 연결’ 버튼 표시
+- 구현: 크롬 프로필은 서로 격리되어 확장만으로는 불가능 → 네이티브 메시징 도우미(`com.powerlink.bridge`, `native-host/`)로 구현
+  - Windows PowerShell 5.1 스크립트 + bat 런처, 허용 메시지(hello/recent/command/ping)만 처리, 프로그램 실행·임의 파일 접근 불가
+  - 프로필 간 공유: `%LOCALAPPDATA%\PowerLink\bridge\profile-<id>.json`, 명령은 `cmd-<대상>-<guid>.json`(1초 폴링), alive 30초 이내면 온라인
+  - manifest에 `nativeMessaging` 권한 추가
+- **설치 방법** (Windows, 한 번만):
+  1. 모든 크롬 프로필에 Power Link를 **같은 dist 폴더**로 설치 (확장 ID가 같아야 함)
+  2. `native-host\install.bat` 실행 — 현재 사용자 범위(HKCU), 관리자 권한 불필요. 제거는 `uninstall.bat`
+  3. 크롬을 완전히 재시작하거나 사이드바 최근 화면의 **[다시 연결]** 클릭
+- 테스트: `node tests/bridge.mjs` — 두 프로필로 목록 공유·이동(열림/닫힘)·삭제·오프라인 처리 검증 (테스트 동안만 임시 레지스트리 등록 후 원상복구)
+
+### 수정
+- tests/verify.mjs: Chrome 153+에서 비활성 탭의 `clipboard.readText()`가 빈 문자열을 반환해 복사 검사가 실패하던 문제 (읽기 전에 대상 탭 활성화)
+- scripts/bump.sh: python3 대신 node 사용 (Windows Git Bash 호환)
+
 ## [2.0.9] - 2026-09-26
 
 ### 추가

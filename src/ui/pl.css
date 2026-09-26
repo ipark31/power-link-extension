@@ -628,6 +628,8 @@ button.pl-switch { border: 0; padding: 0; cursor: pointer; }
 .pl-recent__sub { font-size: 11px; color: var(--pl-text-muted); }
 .pl-recent__open { color: var(--pl-success-fg); font-weight: var(--pl-fw-semibold); }
 .pl-recent .pl-icon-btn[disabled] { opacity: .55; cursor: default; }
+.pl-recent.is-offline .pl-recent__title, .pl-recent.is-offline .pl-recent__sub { color: var(--pl-text-faint); }
+.pl-recent.is-offline .pl-recent__thumb, .pl-recent.is-offline .pl-recent__fav { filter: grayscale(1); opacity: .55; }
 .pl-empty__icon { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 12px; display: grid; place-items: center; background: var(--pl-surface-3); color: var(--pl-text-faint); }
 .pl-empty__title { font-size: var(--pl-fs-md); font-weight: var(--pl-fw-semibold); color: var(--pl-text); margin-bottom: 4px; }
 .pl-item__title[href], .pl-tile__title[href] { cursor: pointer; }

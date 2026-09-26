@@ -94,5 +94,11 @@ export const STORAGE = {
   watch: 'pl_watch',
   quota: 'pl_quota',
   lastGrab: 'pl_lastGrab',
-  recent: 'pl_recent'          // 최근 작업 화면 (chrome.storage.local)
+  recent: 'pl_recent',         // 최근 작업 화면 (chrome.storage.local)
+  // 다른 프로필 연동 (native messaging 도우미) — 모두 chrome.storage.local.
+  // profileName을 sync에 두면 같은 계정으로 로그인한 프로필끼리 이름이 겹쳐 써지므로 local에 둔다.
+  profileId: 'pl_profileId',       // 이 프로필의 고유 ID
+  profileName: 'pl_profileName',   // 다른 프로필에 보일 이 프로필의 이름
+  recentOthers: 'pl_recentOthers', // 다른 프로필들의 최근 화면 { at, profiles: [...] }
+  bridge: 'pl_bridge'              // 도우미 연결 상태 { connected, at }
 };

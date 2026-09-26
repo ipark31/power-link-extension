@@ -14,6 +14,7 @@ const S = {
 };
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
 let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
+let recentOthers = { profiles: [] }, bridge = null; // other Chrome profiles (native messaging helper)
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
 const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['title', '제목순']];
@@ -270,41 +271,66 @@ function ytVideoId(u) {
     return m ? m[1] : null;
   } catch (e) { return null; }
 }
+// My screens plus every other profile's, one flat list. Other-profile entries carry
+// { profile: { id, name, online } }; search, sort and YouTube thumbs treat both alike.
+function recentMerged() {
+  const connected = !!(bridge && bridge.connected);
+  const mine = recent.map((r) => ({ url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: null }));
+  const others = (recentOthers.profiles || []).flatMap((p) => (p.items || []).map((r) => ({
+    url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl,
+    profile: { id: p.id, name: p.name || '다른 프로필', online: connected && !!p.online }
+  })));
+  return mine.concat(others);
+}
 function recentFiltered() {
   const q = S.rq.trim().toLowerCase();
-  const list = q ? recent.filter((r) => (r.title + ' ' + r.url).toLowerCase().includes(q)) : recent.slice();
+  let list = recentMerged();
+  if (q) list = list.filter((r) => (r.title + ' ' + r.url + ' ' + (r.profile ? r.profile.name : '')).toLowerCase().includes(q));
   return list.sort((a, b) => (S.rsort === 'old' ? a.at - b.at : b.at - a.at));
 }
 function renderRecent() {
   const list = recentFiltered();
   const saved = new Set(links.map((l) => rkey(l.url)));
+  const connected = !!(bridge && bridge.connected);
+  const othersCount = list.filter((r) => r.profile).length;
   const rows = list.map((r) => {
-    const isOpen = openTabs.has(rkey(r.url));
+    const p = r.profile;
+    const isOpen = !p && openTabs.has(rkey(r.url));
     const isSaved = saved.has(rkey(r.url));
     const vid = ytVideoId(r.url);
     const fav = vid ? `<span class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" style="background-image:url('https://i.ytimg.com/vi/${vid}/mqdefault.jpg')"></span>`
       : r.favIconUrl && /^https?:|^data:/.test(r.favIconUrl) ? `<img class="pl-recent__fav" src="${esc(r.favIconUrl)}" alt="" loading="lazy">` : `<span class="pl-recent__fav pl-recent__fav--empty">${icon('link', 'pl-i--xs')}</span>`;
-    return `<div class="pl-recent">
-      <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}" title="${isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기'}">
+    const pAttrs = p ? ` data-pid="${esc(p.id)}" data-on="${p.online ? 1 : 0}" data-name="${esc(p.name)}"` : '';
+    const goTip = p ? (p.online ? `‘${esc(p.name)}’ 프로필에서 열기` : '오프라인 프로필 — 이 프로필에서 새 탭으로 열기')
+      : isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기';
+    const badge = p ? `<span class="pl-badge pl-badge--sq" data-tone="${p.online ? 'violet' : ''}" style="height:15px;padding:0 5px;font-size:10px;flex-shrink:0;">${esc(p.name)}</span> · ` : '';
+    return `<div class="pl-recent${p && !p.online ? ' is-offline' : ''}">
+      <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}"${pAttrs} title="${goTip}">
         ${fav}
         <span class="pl-recent__text">
           <span class="pl-recent__title pl-u-truncate">${esc(r.title || r.url)}</span>
-          <span class="pl-recent__sub pl-u-truncate">${isOpen ? '<b class="pl-recent__open">열림</b> · ' : ''}${esc(hostOf(r.url))} · ${esc(timeAgo(new Date(r.at).toISOString()))}</span>
+          <span class="pl-recent__sub pl-u-truncate">${isOpen ? '<b class="pl-recent__open">열림</b> · ' : ''}${badge}${esc(hostOf(r.url))} · ${esc(timeAgo(new Date(r.at).toISOString()))}</span>
         </span>
       </button>
       <button type="button" class="pl-icon-btn pl-icon-btn--sm ${isSaved ? 'is-on' : ''}" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" data-tip="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" data-tip-align="end" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--sm')}</button>
-      <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="rDel" data-val="${esc(r.url)}" aria-label="목록에서 삭제" data-tip="목록에서 삭제" data-tip-align="end">${icon('trash', 'pl-i--sm')}</button>
+      <button type="button" class="pl-icon-btn pl-icon-btn--sm" data-act="rDel" data-val="${esc(r.url)}"${pAttrs} aria-label="목록에서 삭제" data-tip="${p ? '그 프로필의 목록에서 삭제' : '목록에서 삭제'}" data-tip-align="end">${icon('trash', 'pl-i--sm')}</button>
     </div>`;
   }).join('');
+  const notice = connected ? '' : `
+    <div class="pl-card" data-bridge-notice style="margin:10px 14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--pl-surface-2);border-color:var(--pl-divider);">
+      <span class="pl-u-strong" style="font-size:12px;">다른 프로필 연동: 도우미 설치 필요</span>
+      <span class="pl-caption">다른 크롬 프로필의 최근 화면까지 보려면 저장소의 native-host\\install.bat 을 한 번 실행하세요. 모든 프로필에 같은 dist 폴더로 Power Link가 설치돼 있어야 해요.</span>
+      <button type="button" class="pl-btn pl-btn--sm" data-act="rBridgeRetry" style="align-self:flex-start;">다시 연결</button>
+    </div>`;
   return `
   <div class="pl-panel__filters">
-    <label class="pl-input-group">${icon('search', 'pl-i--sm')}<input type="text" id="rq" placeholder="제목, 주소 검색" value="${esc(S.rq)}"></label>
+    <label class="pl-input-group">${icon('search', 'pl-i--sm')}<input type="text" id="rq" placeholder="제목, 주소, 프로필 검색" value="${esc(S.rq)}"></label>
     <div class="pl-head pl-caption">
-      <span style="white-space:nowrap;">${list.length}개 · 최대 ${settings.recentMax || 50}개 기록</span>
+      <span style="white-space:nowrap;">${list.length}개 · 최대 ${settings.recentMax || 50}개 기록${othersCount ? ` · 다른 프로필 ${othersCount}개` : ''}</span>
       <div class="pl-seg pl-seg--sm pl-seg--inline pl-u-push" role="group" aria-label="정렬">${[['new', '최근 화면'], ['old', '오래된 화면']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-panel__scroll">${rows || emptyState(recent.length ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', recent.length ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.')}</div>`;
+  <div class="pl-panel__scroll">${notice}${rows || emptyState(recentMerged().length ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', recentMerged().length ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.')}</div>`;
 }
 async function goRecent(url) {
   const k = rkey(url);
@@ -316,6 +342,16 @@ async function goRecent(url) {
   } else {
     await chrome.tabs.create({ url, active: true });
   }
+}
+// Another profile's screen: ask that profile to jump there; if it is offline,
+// open the URL here instead so the click never dead-ends.
+async function goRecentOther(url, pid, online, name) {
+  if (online) {
+    const r = await send({ type: 'pl:bridgeSend', target: pid, command: { type: 'activate', url } });
+    if (r.ok) { toast(`‘${name}’ 프로필에서 열었어요`); return; }
+  }
+  await chrome.tabs.create({ url, active: true });
+  toast(`‘${name}’ 프로필이 오프라인이라 이 프로필에서 새 탭으로 열었어요`, 'warning');
 }
 async function setRecent(list) { await chrome.storage.local.set({ [STORAGE.recent]: list }); }
 
@@ -468,9 +504,26 @@ app.addEventListener('click', async (e) => {
   switch (act) {
     case 'tab': S.tab = val; if (val === 'recent') { await refreshOpenTabs(); send({ type: 'pl:recentSeed' }); } break;
     case 'rsort': S.rsort = val; break;
-    case 'rGo': await goRecent(val); return;
-    case 'rDel': await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val))); return;
-    case 'rAdd': { const r = recent.find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
+    case 'rGo':
+      if (t.dataset.pid) await goRecentOther(val, t.dataset.pid, t.dataset.on === '1', t.dataset.name || '다른 프로필');
+      else await goRecent(val);
+      return;
+    case 'rDel':
+      if (t.dataset.pid) {
+        const r = await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'forget', url: val } });
+        toast(r.ok ? (t.dataset.on === '1' ? '삭제를 요청했어요' : '오프라인 프로필이에요 — 다시 접속하면 삭제돼요') : r.message || '삭제를 요청하지 못했어요', r.ok ? 'success' : 'error');
+      } else await setRecent(recent.filter((r) => rkey(r.url) !== rkey(val)));
+      return;
+    case 'rAdd': { const r = recentMerged().find((x) => rkey(x.url) === rkey(val)); if (r) report(await send({ type: 'pl:recentAdd', items: [{ url: r.url, title: r.title }] })); return; }
+    case 'rBridgeRetry': {
+      toast('도우미에 연결하는 중…', 'warning');
+      await send({ type: 'pl:bridgeReconnect' });
+      setTimeout(async () => {
+        const b = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge];
+        if (!b || !b.connected) toast('연결하지 못했어요 — native-host\\install.bat 실행 여부를 확인해 주세요', 'error');
+      }, 1500);
+      return;
+    }
     case 'platform': S.platform = val; break;
     case 'kind': S.kind = val; break;
     case 'view': S.view = val; setSettings({ sidepanel: { view: val } }); break;
@@ -523,6 +576,8 @@ chrome.storage.onChanged.addListener(async (ch, area) => {
   if (area === 'local' && ch[STORAGE.links]) { links = ch[STORAGE.links].newValue || []; const ids = new Set(links.map((l) => l.id)); [...S.sel].forEach((i) => ids.has(i) || S.sel.delete(i)); render(); kickEnrich(); }
   if (area === 'local' && ch[STORAGE.apiKey]) { hasKey = !!ch[STORAGE.apiKey].newValue; render(); kickEnrich(); }
   if (area === 'local' && ch[STORAGE.recent]) { recent = ch[STORAGE.recent].newValue || []; if (S.tab === 'recent') render(); }
+  if (area === 'local' && ch[STORAGE.recentOthers]) { recentOthers = ch[STORAGE.recentOthers].newValue || { profiles: [] }; if (S.tab === 'recent') render(); }
+  if (area === 'local' && ch[STORAGE.bridge]) { bridge = ch[STORAGE.bridge].newValue || null; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
   if (area === 'local' && ch.pl_watchCheckedAt) watchCheckedAt = ch.pl_watchCheckedAt.newValue;
   if (area === 'sync' && ch[STORAGE.settings]) settings = await getSettings();
@@ -540,6 +595,8 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (info.url || info.status ==
   S.view = settings.sidepanel?.view || 'list';
   [links, watch] = await Promise.all([getLinks(), getWatch()]);
   recent = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+  recentOthers = (await chrome.storage.local.get(STORAGE.recentOthers))[STORAGE.recentOthers] || { profiles: [] };
+  bridge = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || null;
   ({ pl_watchCheckedAt: watchCheckedAt } = await chrome.storage.local.get('pl_watchCheckedAt'));
   render();                       // screen first
   hasKey = !!(await getApiKey());  // then details, asynchronously

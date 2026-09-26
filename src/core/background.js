@@ -10,6 +10,7 @@ import { cleanTitle, hostOf } from '../shared/util.js';
 chrome.runtime.onInstalled.addListener(async (details) => {
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }); } catch (e) { /* older Chrome */ }
   chrome.alarms.create('pl-watch', { periodInMinutes: 360 });
+  chrome.alarms.create('pl-bridge', { periodInMinutes: 1 });
   if (details.reason === 'update' || details.reason === 'install') await migrateV1();
   seedRecent().catch(() => {});
 });
@@ -69,7 +70,91 @@ chrome.windows.onFocusChanged.addListener(async (winId) => {
 });
 chrome.runtime.onStartup.addListener(() => { seedRecent().catch(() => {}); });
 
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'pl-watch') checkWatchlist().catch(() => {}); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === 'pl-watch') checkWatchlist().catch(() => {});
+  if (a.name === 'pl-bridge' && !bridgePort) bridgeConnect();
+});
+
+// ------------------------------------------------------------------ profile bridge
+// Other Chrome profiles share their "recent screens" through a native messaging
+// helper (see native-host/install.bat). The open port keeps this service worker
+// alive; while the helper is missing we retry on every wake + the pl-bridge alarm.
+const BRIDGE_HOST = 'com.powerlink.bridge';
+const BRIDGE_ITEM_MAX = 300;
+let bridgePort = null;
+let bridgeRecentTimer = 0;
+
+async function bridgeIdentity() {
+  const got = await chrome.storage.local.get([STORAGE.profileId, STORAGE.profileName]);
+  let id = got[STORAGE.profileId];
+  if (!id) {
+    id = 'p' + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
+    await chrome.storage.local.set({ [STORAGE.profileId]: id });
+  }
+  return { id, name: got[STORAGE.profileName] || '' };
+}
+
+async function bridgeSendRecent() {
+  if (!bridgePort) return;
+  const { id, name } = await bridgeIdentity();
+  const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+  const items = list.slice(0, BRIDGE_ITEM_MAX).map((r) => ({
+    url: r.url, title: r.title || '', at: r.at || 0,
+    favIconUrl: (r.favIconUrl || '').length <= 2048 ? r.favIconUrl || '' : ''
+  }));
+  try { bridgePort.postMessage({ type: 'recent', profileId: id, name, items }); } catch (e) { /* just disconnected */ }
+}
+
+function bridgeQueueRecent() {
+  clearTimeout(bridgeRecentTimer);
+  bridgeRecentTimer = setTimeout(() => { bridgeSendRecent().catch(() => {}); }, 1000);
+}
+
+// Commands another profile sent us: jump to (or reopen) a URL, or drop it from our list.
+async function bridgeHandleCommand(cmd) {
+  if (!cmd || !/^https?:/i.test(cmd.url || '')) return;
+  const k = recentKey(cmd.url);
+  if (cmd.type === 'activate') {
+    const tab = (await chrome.tabs.query({})).find((t) => t.url && recentKey(t.url) === k);
+    if (tab) {
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+    } else {
+      const t = await chrome.tabs.create({ url: cmd.url, active: true });
+      try { await chrome.windows.update(t.windowId, { focused: true }); } catch (e) { /* noop */ }
+    }
+  } else if (cmd.type === 'forget') {
+    const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+    const next = list.filter((r) => recentKey(r.url) !== k);
+    if (next.length !== list.length) await chrome.storage.local.set({ [STORAGE.recent]: next });
+  }
+}
+
+function bridgeConnect() {
+  if (bridgePort) return;
+  try { bridgePort = chrome.runtime.connectNative(BRIDGE_HOST); } catch (e) { bridgePort = null; }
+  if (!bridgePort) { chrome.storage.local.set({ [STORAGE.bridge]: { connected: false, at: Date.now() } }); return; }
+  const port = bridgePort;
+  port.onMessage.addListener((m) => {
+    if (!m) return;
+    if (m.type === 'hello' && m.ok) chrome.storage.local.set({ [STORAGE.bridge]: { connected: true, at: Date.now() } });
+    else if (m.type === 'others') chrome.storage.local.set({ [STORAGE.recentOthers]: { at: Date.now(), profiles: Array.isArray(m.profiles) ? m.profiles : [] } });
+    else if (m.type === 'command') bridgeHandleCommand(m.command).catch(() => {});
+  });
+  port.onDisconnect.addListener(() => {
+    if (bridgePort === port) bridgePort = null;
+    chrome.storage.local.set({ [STORAGE.bridge]: { connected: false, at: Date.now() } });
+  });
+  bridgeIdentity().then(({ id, name }) => {
+    port.postMessage({ type: 'hello', profileId: id, name });
+    return bridgeSendRecent();
+  }).catch(() => {});
+}
+
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area !== 'local') return;
+  if (ch[STORAGE.recent] || ch[STORAGE.profileName]) bridgeQueueRecent();
+});
 
 // ------------------------------------------------------------------ helpers
 function toItem(raw, source, extra) {
@@ -456,7 +541,16 @@ const handlers = {
   'pl:openSidePanel': async (msg, sender) => {
     const windowId = sender.tab?.windowId ?? msg.windowId;
     try { await chrome.sidePanel.open({ windowId }); return { ok: true }; } catch (e) { return { ok: false, message: e.message }; }
-  }
+  },
+
+  'pl:bridgeSend': async (msg) => {
+    if (!bridgePort) return { ok: false, offline: true, message: '다른 프로필 도우미가 연결되지 않았어요' };
+    try {
+      bridgePort.postMessage({ type: 'command', target: msg.target, command: msg.command });
+      return { ok: true };
+    } catch (e) { return { ok: false, offline: true, message: '다른 프로필 도우미가 연결되지 않았어요' }; }
+  },
+  'pl:bridgeReconnect': async () => { bridgeConnect(); return { ok: true }; }
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -466,4 +560,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   h(msg, sender).then(sendResponse, (e) => sendResponse({ ok: false, message: e.message || String(e) }));
   return true;
 });
+
+// module init runs on every service-worker start — reconnect to the helper right away
+bridgeConnect();
 

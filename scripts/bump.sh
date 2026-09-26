@@ -4,13 +4,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VER="${1:?version required, e.g. 2.0.8}"
-python3 - "$VER" <<'PY'
-import re, sys
-v = sys.argv[1]
-p = 'manifest.json'; s = open(p, encoding='utf-8').read()
-s = re.sub(r'"name": "Power Link[^"]*"', f'"name": "Power Link v{v}"', s, count=1)
-s = re.sub(r'"version": "[^"]*"', f'"version": "{v}"', s, count=1)
-s = re.sub(r'"version_name": "[^"]*"', f'"version_name": "{v}"', s, count=1)
-open(p, 'w', encoding='utf-8').write(s)
-PY
+node - "$VER" <<'JS'
+const fs = require('fs');
+const v = process.argv[2];
+const p = 'manifest.json';
+let s = fs.readFileSync(p, 'utf8');
+s = s.replace(/"name": "Power Link[^"]*"/, `"name": "Power Link v${v}"`);
+s = s.replace(/"version": "[^"]*"/, `"version": "${v}"`);
+s = s.replace(/"version_name": "[^"]*"/, `"version_name": "${v}"`);
+fs.writeFileSync(p, s);
+JS
 echo "manifest → $VER"

@@ -1,11 +1,12 @@
 // Power Link — options page
 import { getSettings, setSettings, resetSettings, getApiKey, setApiKey, getLinks, setLinks } from '../shared/storage.js';
-import { FIELDS, PLATFORMS, ACTIONS, RULE_COLORS, DEFAULT_SETTINGS } from '../shared/constants.js';
+import { FIELDS, PLATFORMS, ACTIONS, RULE_COLORS, DEFAULT_SETTINGS, STORAGE } from '../shared/constants.js';
 import { esc, uid } from '../shared/util.js';
 import { icon, version, send, toast } from '../ui/ui.js';
 
 const app = document.getElementById('app');
 let settings, apiKey = '', showKey = false, keyStatus = null, quota = 0, linkCount = 0, fieldPlat = 'yt', lastDemo = null, catDraft = '';
+let profileName = ''; // storage.local — sync에 두면 같은 계정의 프로필끼리 이름이 겹쳐 써짐
 let tab = (location.hash || '#rules').slice(1);
 
 const NAV = [
@@ -198,6 +199,7 @@ function viewGeneral() {
     ${row('완료 알림', '수집이 끝나면 페이지 오른쪽 아래에 결과를 보여줘요.', sw('notify', settings.notify))}
     ${row('많이 열 때 확인', '이 개수를 넘으면 열기 전에 한 번 물어봐요.', `<select class="pl-select" id="confirmOver" style="width:100px;">${[10, 20, 50, 100].map((n) => `<option value="${n}" ${settings.confirmOver === n ? 'selected' : ''}>${n}개</option>`).join('')}</select>`)}
     ${row('최근 작업 화면 기록 수', '사이드바 ‘최근 화면’에 남길 탭 개수예요. 넘으면 오래된 것부터 지워요.', `<select class="pl-select" id="recentMax" style="width:100px;">${[20, 50, 100, 200, 500].map((n) => `<option value="${n}" ${(settings.recentMax || 50) === n ? 'selected' : ''}>${n}개</option>`).join('')}</select>`)}
+    ${row('이 프로필 이름', '다른 크롬 프로필의 ‘최근 화면’에 이 이름이 배지로 표시돼요. (다른 프로필 연동 도우미 사용 시)', `<input type="text" class="pl-input" id="profileName" value="${esc(profileName)}" placeholder="예: 업무용" maxlength="30" style="width:160px;">`)}
     ${row('사이드바 열기 단축키', '기본값은 Alt + Shift + L 이에요. 크롬 단축키 설정에서 바꿀 수 있어요.', `<span class="pl-head" style="gap:4px;"><span class="pl-kbd pl-kbd--md">Alt</span><span class="pl-kbd-plus">+</span><span class="pl-kbd pl-kbd--md">Shift</span><span class="pl-kbd-plus">+</span><span class="pl-kbd pl-kbd--md">L</span></span><button type="button" class="pl-text-link" id="shortcuts" style="border:0;background:none;cursor:pointer;">변경</button>`)}
   </section>
   <section class="pl-card pl-card--lg">
@@ -298,6 +300,14 @@ app.addEventListener('change', async (e) => {
   if (d.crule !== undefined) return save({ catRules: settings.catRules.map((r, i) => (i === +d.crule ? Object.assign({}, r, { [d.ck]: t.value }) : r)) });
   if (t.id === 'confirmOver') return save({ confirmOver: +t.value });
   if (t.id === 'recentMax') return save({ recentMax: +t.value });
+  if (t.id === 'profileName') {
+    profileName = t.value.trim().slice(0, 30);
+    await chrome.storage.local.set({ [STORAGE.profileName]: profileName });
+    render();
+    const s = document.getElementById('saved');
+    if (s) { s.style.opacity = '1'; clearTimeout(savedTimer); savedTimer = setTimeout(() => { const el = document.getElementById('saved'); if (el) el.style.opacity = '0'; }, 1400); }
+    return;
+  }
   if (t.id === 'importFile' && t.files[0]) {
     try {
       const data = JSON.parse(await t.files[0].text());
@@ -327,6 +337,7 @@ globalThis.addEventListener('pl-demo-result', (e) => {
 (async function init() {
   settings = await getSettings();
   apiKey = await getApiKey();
+  profileName = (await chrome.storage.local.get(STORAGE.profileName))[STORAGE.profileName] || '';
   linkCount = (await getLinks()).length;
   quota = (await send({ type: 'pl:quota' })).units || 0;
   render();
