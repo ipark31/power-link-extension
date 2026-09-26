@@ -6,5 +6,6 @@ VER=$(node -p "require('./manifest.json').version" 2>/dev/null || python3 -c "im
 rm -rf dist && mkdir -p dist release
 cp manifest.json dist/
 cp -r icons src native-host dist/
+cp INSTALL.html dist/
 ( cd dist && zip -qr "../release/power-link-v${VER}.zip" . )
 echo "Built dist/ and release/power-link-v${VER}.zip"

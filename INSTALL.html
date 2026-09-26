@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power Link 설치 안내</title>
+<style>
+  :root {
+    --bg: #F4F5F7; --surface: #FFFFFF; --surface-2: #F9FAFB; --text: #101828; --text-2: #344054; --muted: #667085;
+    --border: #E4E7EC; --ink: #0B0D12; --neon: #4CFF3F; --neon-ink: #1B7A12; --accent: #2F6BFF;
+    --warn-bg: #FFF7E6; --warn-bd: #FEDF89; --warn-fg: #93370D; --info-bg: #EEF4FF; --info-bd: #C7D7FE; --info-fg: #1D3FA8;
+    --code-bg: #F2F4F7; --shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px -12px rgba(16,24,40,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B0D12; --surface: #13161D; --surface-2: #181C24; --text: #F2F4F7; --text-2: #D0D5DD; --muted: #98A2B3;
+      --border: #262B35; --neon-ink: #7CFF72; --accent: #7AA2FF;
+      --warn-bg: #2A1F0B; --warn-bd: #5C4210; --warn-fg: #FEC84B; --info-bg: #111B33; --info-bd: #233A73; --info-fg: #A9C1FF;
+      --code-bg: #1E232D; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 15px/1.65 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px 64px; }
+
+  .hero { background: var(--ink); color: #fff; padding: 44px 0 40px; margin-bottom: 28px; position: relative; overflow: hidden; }
+  .hero::after { content: ""; position: absolute; right: -80px; top: -80px; width: 320px; height: 320px; border-radius: 50%; background: radial-gradient(circle, rgba(76,255,63,.18), transparent 65%); }
+  body { overflow-x: hidden; }
+  .hero .wrap { padding-bottom: 0; display: flex; gap: 22px; align-items: center; position: relative; z-index: 1; }
+  .hero svg { width: 76px; height: 76px; flex-shrink: 0; filter: drop-shadow(0 10px 24px rgba(0,0,0,.4)); }
+  .hero h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -.02em; }
+  .hero p { margin: 0; color: #C8CDD6; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink); background: var(--neon); border-radius: 999px; padding: 2px 10px; margin-bottom: 10px; }
+
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  .chip { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .chip b { display: block; font-size: 13px; color: var(--muted); font-weight: 500; }
+  .chip span { font-weight: 700; }
+
+  h2 { font-size: 20px; margin: 36px 0 14px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+  h2 small { font-size: 13px; font-weight: 500; color: var(--muted); }
+
+  .step { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .num { width: 40px; height: 40px; border-radius: 12px; background: var(--ink); color: var(--neon); display: grid; place-items: center; font-weight: 800; font-size: 17px; }
+  @media (prefers-color-scheme: dark) { .num { background: #000; box-shadow: inset 0 0 0 1px #2b313c; } }
+  .step h3 { margin: 6px 0 6px; font-size: 16.5px; }
+  .step p { margin: 6px 0; color: var(--text-2); }
+  .step ol, .step ul { margin: 6px 0; padding-left: 20px; color: var(--text-2); }
+  .step li { margin: 3px 0; }
+
+  code, .path { font-family: "JetBrains Mono", Consolas, "D2Coding", monospace; font-size: 13px; }
+  code { background: var(--code-bg); border-radius: 6px; padding: 1px 6px; }
+  .copy { display: flex; align-items: center; gap: 8px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 8px 8px 12px; margin: 8px 0; }
+  .copy .path { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .copy button { border: 0; background: var(--ink); color: #fff; font: 600 12px inherit; font-family: inherit; border-radius: 7px; padding: 6px 10px; cursor: pointer; flex-shrink: 0; }
+  .copy button.done { background: var(--neon); color: var(--ink); }
+  kbd { font: 600 12px/1 inherit; font-family: inherit; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 3px 6px; background: var(--surface); }
+
+  .note { border-radius: 12px; padding: 12px 14px; margin: 10px 0; font-size: 14px; border: 1px solid; }
+  .note.info { background: var(--info-bg); border-color: var(--info-bd); color: var(--info-fg); }
+  .note.warn { background: var(--warn-bg); border-color: var(--warn-bd); color: var(--warn-fg); }
+  .note b { color: inherit; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); font-size: 14px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface-2); font-size: 13px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .ok { color: var(--neon-ink); font-weight: 700; }
+
+  .faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; }
+  .faq summary { cursor: pointer; font-weight: 600; }
+  .faq p { margin: 8px 0 2px; color: var(--text-2); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  @media (max-width: 640px) {
+    .summary { grid-template-columns: 1fr; }
+    .hero .wrap { flex-direction: column; align-items: flex-start; }
+    .step { grid-template-columns: minmax(0, 1fr); padding: 18px 16px; }
+    th, td { padding: 9px 10px; }
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <svg viewBox="0 0 128 128" aria-hidden="true">
+      <defs><linearGradient id="ga" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F2229"/><stop offset="1" stop-color="#050608"/></linearGradient></defs>
+      <rect width="128" height="128" rx="30" fill="url(#ga)"/>
+      <rect x="1.5" y="1.5" width="125" height="125" rx="28.5" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="3"/>
+      <g transform="translate(64 64) scale(1.1) translate(-64 -64)">
+        <g fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><path d="M28 48V34a6 6 0 0 1 6-6h14"/><path d="M80 28h14a6 6 0 0 1 6 6v14"/><path d="M28 80v14a6 6 0 0 0 6 6h14"/></g>
+        <path d="M62 60l38 14-16 5 11 17-8 5-11-17-11 12z" fill="#4CFF3F" stroke="#4CFF3F" stroke-width="4" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <div>
+      <span class="tag">설치 안내 · Windows · Chrome</span>
+      <h1>Power Link 설치하기</h1>
+      <p>드래그로 링크를 모으고, 여러 크롬 프로필의 최근 화면을 한곳에서 보고 이동하는 크리에이터용 확장</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="summary">
+    <div class="chip"><b>걸리는 시간</b><span>약 5분</span></div>
+    <div class="chip"><b>필요한 것</b><span>Windows 10/11 · Chrome 116+</span></div>
+    <div class="chip"><b>관리자 권한</b><span>필요 없음</span></div>
+  </div>
+
+  <div class="note info"><b>먼저 알아 두기</b> — Power Link는 두 부분으로 되어 있어요. <b>① 크롬 확장</b>(모든 기능)과 <b>② 도우미</b>(다른 크롬 프로필의 ‘최근 화면’ 연동 전용)예요. 프로필을 하나만 쓴다면 3단계까지만 하면 돼요.</div>
+
+  <h2>1. 확장 설치 <small>필수</small></h2>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div>
+      <h3>압축 파일을 아래 폴더에 풀기</h3>
+      <p>받은 <code>power-link-v버전.zip</code>의 내용을 아래 경로에 그대로 풀어 주세요. <code>manifest.json</code>이 이 폴더 바로 안에 있어야 해요.</p>
+      <div class="copy"><span class="path">C:\GitHub\power-link-extension\dist</span><button type="button" data-copy="C:\GitHub\power-link-extension\dist">복사</button></div>
+      <div class="note warn"><b>경로를 꼭 똑같이</b> 맞추는 걸 권장해요. 확장의 ID가 폴더 경로로 정해지는데, 이 경로면 도우미가 추가 설정 없이 바로 연결돼요. 다른 곳에 풀었다면 5단계의 ‘다른 경로에 풀었을 때’를 따라 주세요.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div>
+      <h3>크롬에 확장 올리기</h3>
+      <ol>
+        <li>크롬 주소창에 아래 주소를 입력해요.
+          <div class="copy"><span class="path">chrome://extensions</span><button type="button" data-copy="chrome://extensions">복사</button></div></li>
+        <li>오른쪽 위 <b>개발자 모드</b>를 켜요.</li>
+        <li><b>압축해제된 확장 프로그램을 로드합니다</b>를 누르고 1단계 폴더(<code>dist</code>)를 선택해요.</li>
+        <li>툴바의 퍼즐 아이콘에서 Power Link 옆 <b>핀</b>을 눌러 고정해 두면 편해요.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div>
+      <h3>잘 되는지 확인</h3>
+      <ul>
+        <li>아무 페이지에서 <kbd>Ctrl</kbd> + 마우스 <b>오른쪽 버튼 드래그</b> → 파란 박스 안의 링크가 복사돼요.</li>
+        <li><kbd>Shift</kbd> + 오른쪽 드래그 → 새 탭으로 열기 · <kbd>Alt</kbd> + 오른쪽 드래그(자유도형) → 목록에 저장</li>
+        <li><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd> → 사이드바 열기</li>
+      </ul>
+      <div class="note info">유튜브 조회수·구독자 같은 상세 정보는 <b>설정 › YouTube API</b>에 본인 API 키를 넣으면 자동으로 채워져요. (선택)</div>
+    </div>
+  </div>
+
+  <h2>2. 다른 프로필 연동 <small>여러 크롬 프로필을 쓸 때</small></h2>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div>
+      <h3>모든 프로필에 같은 폴더로 설치</h3>
+      <p>크롬 프로필마다 2단계를 반복하되, <b>같은 <code>dist</code> 폴더</b>를 선택해 주세요. 같은 폴더여야 모든 프로필에서 확장 ID가 같아져서 서로 연결돼요.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">5</div>
+    <div>
+      <h3>도우미 설치 (<code>install.bat</code>)</h3>
+      <p>아래 파일을 더블클릭해요. 창에 <code>[OK] Power Link bridge helper installed.</code>가 보이면 끝이에요.</p>
+      <div class="copy"><span class="path">C:\GitHub\power-link-extension\dist\native-host\install.bat</span><button type="button" data-copy="C:\GitHub\power-link-extension\dist\native-host\install.bat">복사</button></div>
+      <p><b>다른 경로에 풀었을 때</b> — <code>chrome://extensions</code>의 Power Link 카드에 보이는 <b>ID</b>(영문 32자)를 복사한 뒤, <code>native-host</code> 폴더에서 명령 프롬프트를 열고 이렇게 실행해요.</p>
+      <div class="copy"><span class="path">install.bat 여기에_확장ID</span><button type="button" data-copy="install.bat ">복사</button></div>
+      <div class="note warn">‘Windows의 PC 보호’ 창이 뜨면 <b>추가 정보 → 실행</b>을 눌러 주세요. 도우미는 현재 사용자 영역에만 설치되고, 탭 제목·주소 목록을 이 PC 안(<code>%LOCALAPPDATA%\PowerLink</code>)에서만 주고받아요. 외부로 보내는 데이터는 없어요.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">6</div>
+    <div>
+      <h3>크롬 다시 시작 · 프로필 이름 정하기</h3>
+      <ol>
+        <li>크롬을 <b>완전히 종료</b>했다가 다시 켜요. (또는 사이드바 <b>최근 화면</b> 탭 위의 <b>[다시 연결]</b>)</li>
+        <li>프로필마다 <b>설정 › 일반 › 이 프로필 이름</b>에 알아보기 쉬운 이름을 넣어요. 예: <code>업무용</code>, <code>유튜브</code></li>
+        <li>사이드바 <b>최근 화면</b>에 다른 프로필의 탭이 이름 배지와 함께 보이면 성공이에요. 항목을 누르면 그 프로필 창의 탭으로 이동하고, 닫힌 화면은 다시 열어요.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2>무엇이 되나요</h2>
+  <table>
+    <thead><tr><th>기능</th><th>확장만</th><th>확장 + 도우미</th></tr></thead>
+    <tbody>
+      <tr><td>드래그로 링크 복사 · 새 탭 · 저장</td><td class="ok">가능</td><td class="ok">가능</td></tr>
+      <tr><td>사이드바 수집 링크 · 키워드 · 워치리스트 · 썸네일 zip · 엑셀</td><td class="ok">가능</td><td class="ok">가능</td></tr>
+      <tr><td>최근 화면 (같은 프로필)</td><td class="ok">가능</td><td class="ok">가능</td></tr>
+      <tr><td>최근 화면에 <b>다른 프로필</b> 탭 표시 · 이동 · 삭제</td><td>—</td><td class="ok">가능</td></tr>
+    </tbody>
+  </table>
+
+  <h2>자주 묻는 질문</h2>
+  <div class="faq">
+    <details><summary>다른 프로필 탭이 안 보여요</summary>
+      <p>① 모든 프로필이 <b>같은 dist 폴더</b>로 설치됐는지, ② <code>install.bat</code>에 넣은 ID가 <code>chrome://extensions</code>의 ID와 같은지 확인하고, ③ 크롬을 완전히 껐다 켜 주세요. 상대 프로필 창이 열려 있어야 ‘온라인’으로 표시돼요.</p></details>
+    <details><summary>다른 프로필 항목을 눌렀는데 지금 창에서 열려요</summary>
+      <p>그 프로필의 크롬 창이 닫혀 있으면(오프라인) 이동할 수 없어서, 현재 프로필에서 새 탭으로 열어 드려요.</p></details>
+    <details><summary>드래그할 때 빨간 선이 같이 그려져요</summary>
+      <p>다른 마우스 제스처 확장(예: 황금비서, Grabbit)이 오른쪽 드래그에 반응하는 거예요. 그 확장을 끄거나 제스처 기능을 꺼 주세요.</p></details>
+    <details><summary>“개발자 모드 확장 사용 중지” 알림이 떠요</summary>
+      <p>압축해제 방식으로 설치한 확장에 크롬이 보여주는 안내예요. 닫기를 눌러도 Power Link는 계속 동작해요.</p></details>
+    <details><summary>업데이트는 어떻게 하나요</summary>
+      <p>새 zip을 같은 <code>dist</code> 폴더에 덮어쓴 뒤 <code>chrome://extensions</code>에서 Power Link의 새로고침(↻)을 눌러요. 수집한 링크와 설정은 그대로 유지돼요. 도우미가 바뀐 버전이면 <code>install.bat</code>을 한 번 더 실행해요.</p></details>
+    <details><summary>지우고 싶어요</summary>
+      <p><code>native-host\uninstall.bat</code>으로 도우미를 제거하고, 각 프로필의 <code>chrome://extensions</code>에서 Power Link를 삭제하면 끝이에요.</p></details>
+  </div>
+
+  <footer>Power Link · 이 안내는 설치 파일(zip)에 함께 들어 있어요</footer>
+</main>
+
+<script>
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-copy]');
+    if (!b) return;
+    try { await navigator.clipboard.writeText(b.dataset.copy); }
+    catch (err) { const t = document.createElement('textarea'); t.value = b.dataset.copy; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+    const old = b.textContent; b.textContent = '복사됨'; b.classList.add('done');
+    setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1400);
+  });
+</script>
+</body>
+</html>
