@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>팝업</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 380px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.text}}; font-family: Roboto, 'Noto Sans KR', Arial, sans-serif; font-size: 13px; overflow: hidden; border-radius: 12px">
+
+  <div style="height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-bottom: 1px solid {{t.border}}">
+    <svg width="24" height="24" viewBox="0 0 128 128" role="img" aria-label="Power Link 로고"><rect width="128" height="128" rx="30" fill="#111317"></rect><rect x="1.5" y="1.5" width="125" height="125" rx="28.5" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"></rect><g transform="translate(64 64) scale(1.1) translate(-64 -64)"><g fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><path d="M28 48V34a6 6 0 0 1 6-6h14"></path><path d="M80 28h14a6 6 0 0 1 6 6v14"></path><path d="M28 80v14a6 6 0 0 0 6 6h14"></path></g><path d="M62 60l38 14-16 5 11 17-8 5-11-17-11 12z" fill="#4CFF3F" stroke="#4CFF3F" stroke-width="4" stroke-linejoin="round"></path></g></svg>
+    <span style="font-size: 15px; font-weight: 500">Power Link</span>
+    <span style="font-size: 12px; color: {{t.muted}}">v2.1.3</span>
+    <div style="flex-grow: 1"></div>
+    <button type="button" aria-label="사이드바 열기" style="width: 36px; height: 36px; border: 0; border-radius: 18px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2.5"></rect><path d="M15 4v16"></path></svg></button>
+    <button type="button" aria-label="설정" style="width: 36px; height: 36px; border: 0; border-radius: 18px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"></path><circle cx="15" cy="6" r="2"></circle><circle cx="9" cy="12" r="2"></circle><circle cx="17" cy="18" r="2"></circle></svg></button>
+  </div>
+
+  <div style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 500; color: {{t.muted}}">범위</span>
+      <div role="group" aria-label="범위" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; border-radius: 10px; background: {{t.seg}}">
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">현재 탭</button>
+        <button type="button" aria-pressed="true" style="height: 32px; border: 0; border-radius: 8px; background: {{t.segOn}}; color: {{t.text}}; box-shadow: {{t.segShadow}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">현재 창 · 12</button>
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">모든 창</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 500; color: {{t.muted}}">플랫폼</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">전체</button>
+        <button type="button" aria-pressed="true" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.ink}}; color: {{t.onInk}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">유튜브</button>
+        <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">틱톡</button>
+        <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">인스타</button>
+        <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">X</button>
+        <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">블로그</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 500; color: {{t.muted}}">종류</span>
+      <div role="group" aria-label="종류" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; border-radius: 10px; background: {{t.seg}}">
+        <button type="button" aria-pressed="true" style="height: 32px; border: 0; border-radius: 8px; background: {{t.segOn}}; color: {{t.text}}; box-shadow: {{t.segShadow}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">영상·게시물</button>
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">채널·계정</button>
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">모든 링크</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 500; color: {{t.muted}}">담을 정보</span>
+      <div role="group" aria-label="담을 정보" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; border-radius: 10px; background: {{t.seg}}">
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">링크만</button>
+        <button type="button" aria-pressed="true" style="height: 32px; border: 0; border-radius: 8px; background: {{t.segOn}}; color: {{t.text}}; box-shadow: {{t.segShadow}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">링크 + 제목</button>
+        <button type="button" style="height: 32px; border: 0; border-radius: 8px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">상세 정보</button>
+      </div>
+    </div>
+
+    <p style="margin: 0; padding: 10px 12px; border-radius: 10px; background: {{t.bg2}}; font-size: 12px; line-height: 1.6; color: {{t.text2}}">현재 창의 탭 12개에서 <b style="font-weight: 500; color: {{t.text}}">유튜브 영상</b> 링크를 제목과 함께 모아요.</p>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <button type="button" style="height: 40px; border: 0; border-radius: 20px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 4h12v17l-6-4-6 4V4Z"></path></svg>목록에 저장</button>
+      <button type="button" style="height: 40px; border: 0; border-radius: 20px; background: {{t.ink}}; color: {{t.onInk}}; font-family: inherit; font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>복사</button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 5px; padding-top: 12px; border-top: 1px solid {{t.divider}}; font-size: 12px; color: {{t.muted}}">
+      <kbd style="font-family: inherit; font-size: 11px; font-weight: 500; padding: 1px 6px; border: 1px solid {{t.border}}; border-bottom-width: 2px; border-radius: 5px; background: {{t.bg}}; color: {{t.text2}}">Ctrl</kbd>
+      <kbd style="font-family: inherit; font-size: 11px; font-weight: 500; padding: 1px 6px; border: 1px solid {{t.border}}; border-bottom-width: 2px; border-radius: 5px; background: {{t.bg}}; color: {{t.text2}}">Shift</kbd>
+      <kbd style="font-family: inherit; font-size: 11px; font-weight: 500; padding: 1px 6px; border: 1px solid {{t.border}}; border-bottom-width: 2px; border-radius: 5px; background: {{t.bg}}; color: {{t.text2}}">Alt</kbd>
+      <span>+ 우클릭 드래그로도 모아요</span>
+      <div style="flex-grow: 1"></div>
+      <a href="#" style="font-weight: 500; color: {{t.text}}; text-underline-offset: 3px">규칙</a>
+    </div>
+  </div>
+
+  <div style="height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-top: 1px solid {{t.border}}; background: {{t.bg2}}; font-size: 12px; color: {{t.muted}}">
+    <span>사이드바</span>
+    <span style="color: {{t.text2}}">Alt + Shift + L</span>
+    <div style="flex-grow: 1"></div>
+    <span>수집 링크 <b style="font-weight: 500; color: {{t.text}}">16</b></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":380,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const T = {
+      light: { bg: '#FFFFFF', bg2: '#F9F9F9', border: '#E5E5E5', divider: '#F0F0F0', text: '#0F0F0F', text2: '#3F3F3F', muted: '#606060', ink: '#0F0F0F', onInk: '#FFFFFF', chip: '#F2F2F2', seg: '#F2F2F2', segOn: '#FFFFFF', segShadow: '0 1px 2px rgba(0,0,0,.14)' },
+      dark: { bg: '#212121', bg2: '#1A1A1A', border: '#383838', divider: '#2C2C2C', text: '#F1F1F1', text2: '#D0D0D0', muted: '#AAAAAA', ink: '#F1F1F1', onInk: '#0F0F0F', chip: '#333333', seg: '#2C2C2C', segOn: '#4A4A4A', segShadow: 'none' }
+    };
+    return { t: T[this.props.theme === 'dark' ? 'dark' : 'light'] };
+  }
+}
+</script>
+</body>
+</html>

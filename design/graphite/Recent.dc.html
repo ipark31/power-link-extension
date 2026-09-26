@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>최근 화면</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 400px; height: 860px; box-sizing: border-box; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.text}}; font-family: Roboto, 'Noto Sans KR', Arial, sans-serif; font-size: 13px; overflow: hidden">
+
+  <div style="height: 48px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 14px; border-bottom: 1px solid {{t.border}}">
+    <svg width="22" height="22" viewBox="0 0 128 128" role="img" aria-label="Power Link 로고"><rect width="128" height="128" rx="30" fill="#111317"></rect><rect x="1.5" y="1.5" width="125" height="125" rx="28.5" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"></rect><g transform="translate(64 64) scale(1.2) translate(-64 -64)"><g fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"><path d="M28 48V34a6 6 0 0 1 6-6h14"></path><path d="M80 28h14a6 6 0 0 1 6 6v14"></path><path d="M28 80v14a6 6 0 0 0 6 6h14"></path></g><path d="M62 60l38 14-16 5 11 17-8 5-11-17-11 12z" fill="#4CFF3F" stroke="#4CFF3F" stroke-width="4" stroke-linejoin="round"></path></g></svg>
+    <span style="font-size: 15px; font-weight: 500">Power Link</span>
+    <span style="font-size: 12px; color: {{t.muted}}">v2.1.3</span>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; align-items: center">
+      <button type="button" aria-label="현재 창의 링크 모으기" title="현재 창의 링크 모으기" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h7M18 14v7M14.5 17.5h7"></path></svg></button>
+      <button type="button" aria-label="테마 전환" title="테마 전환" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg></button>
+      <button type="button" aria-label="설정" title="설정" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"></path><circle cx="15" cy="6" r="2"></circle><circle cx="9" cy="12" r="2"></circle><circle cx="17" cy="18" r="2"></circle></svg></button>
+      <span aria-hidden="true" style="width: 1px; height: 16px; margin: 0 4px; background: {{t.border}}"></span>
+      <button type="button" aria-label="사이드 패널 닫기" title="사이드 패널 닫기" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: none; color: {{t.text2}}; display: grid; place-items: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="height: 48px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: stretch; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid {{t.border}}">
+    <button type="button" style="border: none; border-bottom: 2px solid transparent; outline: 0; border-radius: 0; background: none; padding: 0 10px; display: flex; align-items: center; gap: 5px; font-family: inherit; font-size: 13px; font-weight: 500; color: {{t.muted}}; cursor: pointer">수집 링크<span style="font-size: 11px; font-weight: 400">10</span></button>
+    <button type="button" style="border: none; outline: 0; border-radius: 0; background:{{t.chip}}; padding: 0 10px; display: flex; align-items: center; font-family: inherit; font-size: 13px; font-weight: 500; color: {{t.text}}; border-bottom: 2px solid {{t.text}}; cursor: pointer">최근 화면</button>
+    <button type="button" style="border: none; border-bottom: 2px solid transparent; outline: 0; border-radius: 0; background: none; padding: 0 10px; display: flex; align-items: center; font-family: inherit; font-size: 13px; font-weight: 500; color: {{t.muted}}; cursor: pointer">키워드</button>
+    <button type="button" style="border: none; border-bottom: 2px solid transparent; outline: 0; border-radius: 0; background: none; padding: 0 10px; display: flex; align-items: center; gap: 5px; font-family: inherit; font-size: 13px; font-weight: 500; color: {{t.muted}}; cursor: pointer">워치리스트<span style="font-size: 11px; font-weight: 400">8</span></button>
+  </div>
+
+  <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; border-bottom: 1px solid {{t.divider}}">
+    <label style="height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid {{t.border}}; border-radius: 18px; background: {{t.input}}; color: {{t.muted}}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+      <input type="text" aria-label="검색" placeholder="제목, 주소 검색" style="flex-grow: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-family: inherit; font-size: 13px; color: {{t.text}}">
+    </label>
+    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap">
+      <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.ink}}; color: {{t.onInk}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">모든 프로필</button>
+      <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; cursor: pointer"><span style="width: 6px; height: 6px; border-radius: 50%; background: {{t.online}}"></span>이 프로필</button>
+      <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; cursor: pointer"><span style="width: 6px; height: 6px; border-radius: 50%; background: {{t.online}}"></span>업무용</button>
+      <button type="button" style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.chip}}; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; cursor: pointer"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid {{t.muted}}; box-sizing: border-box"></span>유튜브 작업</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span style="font-size: 12px; color: {{t.muted}}">32개 · 최대 50개 기록</span>
+      <div style="flex-grow: 1"></div>
+      <div role="group" aria-label="정렬" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: {{t.seg}}">
+        <button type="button" aria-pressed="true" style="height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: {{t.segOn}}; color: {{t.text}}; box-shadow: {{t.segShadow}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">최근 순</button>
+        <button type="button" style="height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: {{t.muted}}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer">오래된 순</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 0">
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+      <div style="display: flex; align-items: center; gap: 10px; margin: 0 6px; padding: 8px 6px 8px 8px; border-radius: 10px; background: {{r.bg}}">
+        <div style="width: 64px; height: 36px; flex-shrink: 0; border-radius: 6px; background: {{r.thumb}}; display: grid; place-items: center">
+          <sc-if value="{{r.isSite}}" hint-placeholder-val="{{false}}">
+            <span style="width: 20px; height: 20px; border-radius: 5px; background: {{t.chip}}; color: {{t.text2}}; display: grid; place-items: center; font-size: 11px; font-weight: 700">{{r.letter}}</span>
+          </sc-if>
+        </div>
+        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <a href="#" style="text-decoration: none; color: {{t.text}}; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><sc-if value="{{r.yt}}" hint-placeholder-val="{{false}}"><svg width="16" height="11" viewBox="0 0 28 20" role="img" aria-label="유튜브" style="vertical-align: -1px; margin-right: 5px"><rect width="28" height="20" rx="5" fill="#FF0000"></rect><path d="M11 6l7.5 4-7.5 4z" fill="#FFFFFF"></path></svg></sc-if>{{r.title}}</a>
+          <div style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: {{t.muted}}; white-space: nowrap; overflow: hidden">
+            <sc-if value="{{r.open}}" hint-placeholder-val="{{false}}">
+              <span style="display: flex; align-items: center; gap: 4px; color: {{t.up}}; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 50%; background: {{t.online}}"></span>열림</span>
+              <span>·</span>
+            </sc-if>
+            <span style="overflow: hidden; text-overflow: ellipsis">{{r.meta}}</span>
+          </div>
+        </div>
+        <sc-if value="{{r.other}}" hint-placeholder-val="{{false}}">
+          <span style="flex-shrink: 0; height: 22px; padding: 0 8px; border-radius: 11px; background: {{t.chip}}; font-size: 11px; font-weight: 500; color: {{t.text2}}; display: flex; align-items: center; gap: 4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>{{r.profile}}</span>
+        </sc-if>
+        <sc-if value="{{r.hover}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; gap: 2px; flex-shrink: 0">
+            <button type="button" aria-label="수집 링크에 추가" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: {{t.bg}}; color: {{t.text}}; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+            <button type="button" aria-label="목록에서 삭제" style="width: 30px; height: 30px; border: 0; border-radius: 15px; background: {{t.bg}}; color: {{t.text}}; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"></path></svg></button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":400,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const T = {
+      light: { bg: '#FFFFFF', input: '#F8F8F8', border: '#E5E5E5', divider: '#F0F0F0', text: '#0F0F0F', text2: '#3F3F3F', muted: '#606060', ink: '#0F0F0F', onInk: '#FFFFFF', chip: '#F2F2F2', seg: '#F2F2F2', segOn: '#FFFFFF', segShadow: '0 1px 2px rgba(0,0,0,.14)', up: '#0B7A3B', online: '#16A34A', hover: '#F2F2F2', siteBg: 'transparent' },
+      dark: { bg: '#0F0F0F', input: '#121212', border: '#303030', divider: '#222222', text: '#F1F1F1', text2: '#D0D0D0', muted: '#AAAAAA', ink: '#F1F1F1', onInk: '#0F0F0F', chip: '#272727', seg: '#272727', segOn: '#474747', segShadow: 'none', up: '#4ADE80', online: '#22C55E', hover: '#272727', siteBg: 'transparent' }
+    };
+    const t = T[this.props.theme === 'dark' ? 'dark' : 'light'];
+    const vid = (title, meta, thumb, extra) => Object.assign({ isSite: false, yt: meta.indexOf('youtube.com') === 0, title, meta, thumb, open: false, other: false, profile: '', hover: false, bg: t.bg }, extra || {});
+    const site = (letter, title, meta, extra) => Object.assign({ isSite: true, yt: false, letter, title, meta, thumb: t.siteBg, open: false, other: false, profile: '', hover: false, bg: t.bg }, extra || {});
+    return {
+      t,
+      rows: [
+        vid('편의점 알바가 본 진상 손님 유형 TOP 5', 'youtube.com · 방금', '#2D3136', { open: true }),
+        site('N', '나레이션 잘 쓰는 법 | Notion', 'notion.so · 3분 전', { open: true, other: true, profile: '업무용' }),
+        vid('(1995) 유튜브 수익화 필수 조건 정리', 'youtube.com · 12분 전', '#34302E', { hover: true, bg: t.hover, open: true }),
+        vid('(1996) 클로드 코드에서 유튜브 자동화하기', 'youtube.com · 25분 전', '#262A30', { other: true, profile: '유튜브 작업' }),
+        site('S', '유튜브 계정목록 - Google Sheets', 'docs.google.com · 41분 전', { open: true, other: true, profile: '업무용' }),
+        vid('Youtube Channels for Sale | 채널 매매', 'dealbank.com · 1시간 전', '#3A3834'),
+        vid('(1992) 크레딧 이펙트로 조회수 올리기', 'youtube.com · 2시간 전', '#31363B', { other: true, profile: '유튜브 작업' }),
+        vid('(6532) [출격] 제2의 비트코인 온다', 'youtube.com · 3시간 전', '#2E3238'),
+        site('G', '데이터 및 개인 정보 보호', 'myaccount.google.com · 3시간 전'),
+        vid('(6530) 무료 Seedance 영상 생성', 'youtube.com · 5시간 전', '#3B3530', { other: true, profile: '업무용' }),
+        site('A', '사용자 인증 정보 – API 및 서비스', 'console.cloud.google.com · 어제'),
+        vid('"임박한 대표가 이러면 안 되는데" 분석', 'youtube.com · 어제', '#2B2F36')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

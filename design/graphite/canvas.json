@@ -1,0 +1,30 @@
+{
+  "v": 3,
+  "attachments": {},
+  "createdOnFiles": {"at": "2026-09-26T14:45:00Z", "v": 1},
+  "title": "Power Link UI 리디자인",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "designSystems": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 400, "h": 860, "title": "수집 링크 · 썸네일"},
+    "List.dc.html": {"x": 480, "y": 0, "w": 400, "h": 860, "title": "수집 링크 · 목록 + 선택"},
+    "Detail.dc.html": {"x": 960, "y": 0, "w": 400, "h": 860, "title": "수집 링크 · 상세"},
+    "Recent.dc.html": {"x": 1440, "y": 0, "w": 400, "h": 860, "title": "최근 화면"},
+    "Popup.dc.html": {"x": 1920, "y": 0, "w": 380, "h": 600, "title": "팝업"},
+    "MainDark.dc.html": {"x": 0, "y": 1160, "w": 400, "h": 860, "title": "수집 링크 · 썸네일 (어두운)"},
+    "ListDark.dc.html": {"x": 480, "y": 1160, "w": 400, "h": 860, "title": "수집 링크 · 목록 (어두운)"},
+    "DetailDark.dc.html": {"x": 960, "y": 1160, "w": 400, "h": 860, "title": "수집 링크 · 상세 (어두운)"},
+    "RecentDark.dc.html": {"x": 1440, "y": 1160, "w": 400, "h": 860, "title": "최근 화면 (어두운)"},
+    "PopupDark.dc.html": {"x": 1920, "y": 1160, "w": 380, "h": 600, "title": "팝업 (어두운)"},
+    "Settings.dc.html": {"x": 0, "y": 2320, "w": 1200, "h": 820, "title": "설정 · 디자인 (테마 선택 가능)", "is_interactive": true},
+    "SettingsDark.dc.html": {"x": 1280, "y": 2320, "w": 1200, "h": 820, "title": "설정 · 디자인 (어두운)"},
+    "SettingsRules.dc.html": {"x": 2560, "y": 2320, "w": 1200, "h": 820, "title": "설정 · 수집 규칙"}
+  },
+  "order": ["Main.dc.html", "List.dc.html", "Detail.dc.html", "Recent.dc.html", "Popup.dc.html", "MainDark.dc.html", "ListDark.dc.html", "DetailDark.dc.html", "RecentDark.dc.html", "PopupDark.dc.html", "Settings.dc.html", "SettingsDark.dc.html", "SettingsRules.dc.html"],
+  "notes": {
+    "t1": {"x": 0, "y": -260, "text": "밝은 테마 — 사이드바 · 팝업", "kind": "title1", "maxW": 2300, "w": 240},
+    "t2": {"x": 0, "y": 900, "text": "어두운 테마 — 사이드바 · 팝업", "kind": "title1", "maxW": 2300},
+    "t3": {"x": 0, "y": 2060, "text": "설정 화면", "kind": "title1", "maxW": 3760}
+  }
+}
