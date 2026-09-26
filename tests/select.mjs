@@ -32,7 +32,7 @@ const box = async (page, mod, x1, y1, x2, y2) => {
 // 1) lasso over only the right-bottom corner of a big card link (its center stays outside)
 const page = await ctx.newPage(); await page.goto('http://localhost:8778/'); await wait(800);
 await lasso(page, [[330, 120], [520, 120], [520, 230], [330, 230], [330, 122]]);
-ok('자유도형이 큰 링크의 일부만 덮어도 선택', (await listed()).some((u) => u.includes('/big')), JSON.stringify(await listed()));
+ok('선 긋기가 큰 링크의 일부만 지나가도 선택', (await listed()).some((u) => u.includes('/big')), JSON.stringify(await listed()));
 
 // 2) YouTube player: drag over part of it → the video being watched is selected
 await clearList();

@@ -26,8 +26,8 @@ await sp.click('[data-act="view"][data-val="detail"]');
 const page = await ctx.newPage(); await ctx.grantPermissions(['clipboard-read','clipboard-write'],{origin:'http://localhost:8771'});
 await page.goto('http://localhost:8771/'); await page.waitForTimeout(700);
 const t0 = Date.now();
-await page.keyboard.down('Alt'); await page.mouse.move(5,5); await page.mouse.down({button:'right'});
-for (const p of [[990,5],[990,200],[5,200]]) await page.mouse.move(p[0],p[1],{steps:8});
+await page.keyboard.down('Alt'); await page.mouse.move(5,100); await page.mouse.down({button:'right'});
+await page.mouse.move(990,100,{steps:16}); // 선 긋기: one line across the three thumbnails
 await page.mouse.up({button:'right'}); await page.keyboard.up('Alt');
 // how fast do links appear (before API finishes)?
 let first = null;
@@ -40,12 +40,12 @@ console.log('after', JSON.stringify(L)); console.log('calls1', calls.length, cal
 const c1 = calls.length;
 // re-collect the same links and reopen the panel: no new API calls expected
 await page.bringToFront();
-await page.keyboard.down('Alt'); await page.mouse.move(5,5); await page.mouse.down({button:'right'});
-for (const p of [[990,5],[990,200],[5,200]]) await page.mouse.move(p[0],p[1],{steps:8});
+await page.keyboard.down('Alt'); await page.mouse.move(5,100); await page.mouse.down({button:'right'});
+await page.mouse.move(990,100,{steps:16}); // 선 긋기: one line across the three thumbnails
 await page.mouse.up({button:'right'}); await page.keyboard.up('Alt'); await page.waitForTimeout(1500);
 await page.keyboard.down('Control'); await page.mouse.move(5,5); await page.mouse.down({button:'right'}); await page.mouse.move(990,200,{steps:8}); await page.mouse.up({button:'right'}); await page.keyboard.up('Control'); await page.waitForTimeout(1500);
 await sp.reload(); await sp.waitForTimeout(2000);
-console.log('extra calls after recollect/reopen', calls.length - c1);
+console.log('extra calls after recollect/reopen', calls.length - c1, calls.slice(c1).join(' '));
 L = await sw.evaluate(async()=> (await chrome.storage.local.get('pl_links')).pl_links.map(l=>[l.title,!!l.enrichedAt]));
 console.log('final', JSON.stringify(L));
 await ctx.close(); process.exit(0);

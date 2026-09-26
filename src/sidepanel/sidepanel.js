@@ -1,16 +1,16 @@
 // Power Link — side panel (collected links, recent screens, keywords, watchlist)
 // Layout follows design/graphite (Main / List / Detail / Recent boards).
-import { getSettings, setSettings, getLinks, updateLink, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
+import { getSettings, setSettings, getLinks, setLinks, updateLink, updateLinks, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
 import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
-import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal, memoModal } from '../ui/ui.js';
+import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal, memoModal, collectionModal } from '../ui/ui.js';
 import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
 import { makeZip, safeFileName } from '../shared/zip.js';
 
 const app = document.getElementById('app');
 const S = {
-  tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', q: '', sort: 'recent', kwSource: 'title',
+  tab: 'links', view: 'list', platform: 'all', kind: 'all', cat: 'all', coll: 'all', hot: false, q: '', sort: 'recent', kwSource: 'title',
   sel: new Set(), open: new Set(), allOpen: false,
   rq: '', rsort: 'new', rprof: 'all',
   limit: 60 // rows rendered so far; more are appended while scrolling (see appendMore)
@@ -19,13 +19,14 @@ const PAGE = 60;
 let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = false;
 let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
 let recentOthers = { profiles: [] }, bridge = null; // other Chrome profiles (native messaging helper)
+let collections = [], showMarks = true; // link folders · page outlines visible
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
 const KINDS = [['all', '종류'], ['post', '게시물·영상'], ['account', '채널·계정']];
-const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['title', '제목순']];
+const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['channel', '채널별 묶기'], ['title', '제목순']];
 const BAR_ACTIONS = [
   ['bCopy', 'copy', '복사'], ['bOpen', 'external', '새 탭으로 열기'], ['bThumbs', 'image', '썸네일 압축 저장'],
-  ['bWatch', 'eye', '워치리스트에 추가'], ['bBookmark', 'bookmark', '북마크에 추가'], ['bExcel', 'download', '엑셀 다운로드'],
+  ['bColl', 'folder', '컬렉션에 넣기'], ['bWatch', 'eye', '워치리스트에 추가'], ['bBookmark', 'bookmark', '북마크에 추가'], ['bExcel', 'download', '엑셀 다운로드'],
   ['bDelete', 'trash', '목록에서 삭제']
 ];
 
@@ -52,6 +53,8 @@ function accountStats(a) {
     ['총 조회수', a.views != null ? compactKo(a.views) : '-']
   ];
 }
+// collection name after the meta line (· 폴더명)
+const collTag = (it) => { const c = it.coll && collections.find((x) => x.id === it.coll); return c ? ' · ' + esc(c.name) : ''; };
 const canFetch = (it) => isYt(it) && ((it.kind === 'post' && it.ids?.videoId) || (it.kind === 'account' && (it.ids?.channelId || it.ids?.handle)));
 
 function filtered() {
@@ -60,11 +63,14 @@ function filtered() {
     (S.platform === 'all' || l.platform === S.platform) &&
     (S.kind === 'all' || l.kind === S.kind) &&
     (S.cat === 'all' || (l.category || '') === S.cat) &&
+    (S.coll === 'all' || (S.coll === 'none' ? !l.coll : l.coll === S.coll)) &&
+    (!S.hot || (l.outlier != null && l.outlier >= 1.5)) &&
     (!q || [l.title, l.url, l.account?.name, settings.memoSearch !== false ? l.memo : '', l.category].some((v) => (v || '').toLowerCase().includes(q))));
   const num = (v) => (v == null ? -1 : v);
   if (S.sort === 'outlier') list = [...list].sort((a, b) => num(b.outlier) - num(a.outlier));
   else if (S.sort === 'views') list = [...list].sort((a, b) => num(b.detail?.views) - num(a.detail?.views));
   else if (S.sort === 'title') list = [...list].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  else if (S.sort === 'channel') list = [...list].sort((a, b) => chanName(a).localeCompare(chanName(b), 'ko')); // stable: newest first inside a channel
   return list;
 }
 
@@ -85,7 +91,7 @@ const thumbBg = () => '';
 
 function tile(it) {
   const acc = it.kind === 'account';
-  return `<div class="pl-tile ${S.sel.has(it.id) ? 'is-selected' : ''}">
+  return `<div class="pl-tile ${S.sel.has(it.id) ? 'is-selected' : ''}" data-row="${it.id}" tabindex="-1">
     <div class="pl-tile__thumb ${acc ? 'pl-tile__thumb--ch' : ''}"${thumbBg(it)}>
       ${thumbInner(it, 'pl-av--xl')}
       ${check(it, 'pl-tile__check')}
@@ -93,7 +99,7 @@ function tile(it) {
     </div>
     <a class="pl-tile__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it)}</a>
     <div class="pl-tile__meta">
-      <span class="pl-chan">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(acc ? (it.ids?.handle || it.domain) : chanName(it))}${it.category ? ' · ' + esc(it.category) : ''}</span></span>
+      <span class="pl-chan">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(acc ? (it.ids?.handle || it.domain) : chanName(it))}${it.category ? ' · ' + esc(it.category) : ''}${collTag(it)}</span></span>
       <div class="pl-tile__stat"><span class="pl-trunc">${esc(statLine(it))}</span>${hotTag(it)}${memoBtn(it)}</div>
     </div>
   </div>`;
@@ -102,12 +108,12 @@ function tile(it) {
 function rowList(it) {
   const acc = it.kind === 'account';
   const meta = acc ? statLine(it) : [chanName(it), statLine(it)].filter(Boolean).join(' · ');
-  return `<div class="pl-lrow ${S.sel.has(it.id) ? 'is-selected' : ''}">
+  return `<div class="pl-lrow ${S.sel.has(it.id) ? 'is-selected' : ''}" data-row="${it.id}" tabindex="-1">
     ${check(it)}
     <div class="pl-lthumb ${acc ? 'pl-lthumb--ch' : ''}"${thumbBg(it)}>${thumbInner(it, 'pl-av--lg')}${acc ? '' : dur(it)}</div>
     <div class="pl-lrow__body">
       <a class="pl-lrow__title" href="${esc(it.url)}" target="_blank" rel="noopener">${titleHtml(it)}</a>
-      <span class="pl-lrow__meta">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(meta)}${it.category ? ' · ' + esc(it.category) : ''}</span>${hotTag(it)}</span>
+      <span class="pl-lrow__meta">${avatar(chanName(it), it.account?.avatar)}<span class="pl-trunc">${esc(meta)}${it.category ? ' · ' + esc(it.category) : ''}${collTag(it)}</span>${hotTag(it)}</span>
       ${it.memo ? memoChip(it) : ''}
     </div>
     ${memoBtn(it, 'pl-memo-btn--md')}
@@ -159,7 +165,7 @@ function rowDetail(it) {
       ${a?.accountUrl ? `<a class="pl-chip" href="${esc(a.accountUrl)}" target="_blank" rel="noopener">${icon('external', 'pl-i--sm')}${esc(P(it).openAccount)}</a>` : ''}
       ${it.memo ? '' : `<button type="button" class="pl-chip" data-act="memo" data-id="${it.id}">${icon('memoSm', 'pl-i--sm')}메모 추가</button>`}
     </div>` : '';
-  return `<div class="pl-drow ${S.sel.has(it.id) ? 'is-selected' : ''}">
+  return `<div class="pl-drow ${S.sel.has(it.id) ? 'is-selected' : ''}" data-row="${it.id}" tabindex="-1">
     <div class="pl-drow__top">
       ${check(it)}
       <a class="pl-dthumb ${acc ? 'pl-dthumb--ch' : ''}"${thumbBg(it)} href="${esc(it.url)}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">${thumbInner(it, 'pl-av--xl')}${acc ? '' : dur(it)}</a>
@@ -202,21 +208,24 @@ function renderLinks() {
   links.forEach((l) => { counts[l.platform] = (counts[l.platform] || 0) + 1; });
   const cats = [...new Set(links.map((l) => l.category).filter(Boolean))];
   const allSel = list.length > 0 && list.every((l) => S.sel.has(l.id));
+  const hotCount = links.filter((l) => l.outlier != null && l.outlier >= 1.5).length;
+  if (S.coll !== 'all' && S.coll !== 'none' && !collections.some((c) => c.id === S.coll)) S.coll = 'all';
   const shown = list.slice(0, S.limit);
   const more = list.length > shown.length ? '<div class="pl-more" data-more aria-hidden="true"></div>' : '';
   const body = !links.length
     ? emptyState('아직 수집한 링크가 없어요', 'Alt + 우클릭 드래그로 링크를 둘러 그리면 여기에 저장돼요. 팝업의 ‘목록에 저장’도 쓸 수 있어요.')
     : !list.length ? emptyState('조건에 맞는 링크가 없어요', '필터나 검색어를 바꿔 보세요.', 'search')
-    : S.view === 'thumb' ? `<div class="pl-grid" data-rows>${shown.map(tile).join('')}</div>${more}`
-    : `<div data-rows>${shown.map(S.view === 'detail' ? rowDetail : rowList).join('')}</div>${more}`;
+    : S.view === 'thumb' ? `<div class="pl-grid" data-rows>${withGroups(shown, null, tile, linkGroupOf(), groupCounts(list))}</div>${more}`
+    : `<div data-rows>${withGroups(shown, null, S.view === 'detail' ? rowDetail : rowList, linkGroupOf(), groupCounts(list))}</div>${more}`;
   return `
   <div class="pl-filters">
-    <label class="pl-search">${icon('search')}<input type="text" id="q" placeholder="제목, 채널, 메모 검색" value="${esc(S.q)}" aria-label="검색"></label>
-    <div class="pl-frow">
-      <div class="pl-frow__chips">${PLAT_FILTERS.filter(([id]) => id === 'all' || counts[id]).map(([id, l]) => `<button type="button" class="pl-chip" aria-pressed="${S.platform === id}" data-act="platform" data-val="${id}">${id === 'yt' ? icon('play', 'pl-i--sm') : ''}${l}<span class="pl-chip__n">${counts[id] || 0}</span></button>`).join('')}</div>
+    <label class="pl-search">${icon('search')}<input type="text" id="q" placeholder="제목, 채널, 메모 검색  ( / )" value="${esc(S.q)}" aria-label="검색"></label>
+    <div class="pl-frow pl-frow--wrap">
+      <div class="pl-frow__chips">${PLAT_FILTERS.filter(([id]) => id === 'all' || counts[id]).map(([id, l]) => `<button type="button" class="pl-chip" aria-pressed="${S.platform === id}" data-act="platform" data-val="${id}">${id === 'yt' ? icon('play', 'pl-i--sm') : ''}${l}<span class="pl-chip__n">${counts[id] || 0}</span></button>`).join('')}${hotCount || S.hot ? `<button type="button" class="pl-chip" aria-pressed="${S.hot}" data-act="hot" title="채널 평균보다 1.5배 이상 조회된 영상만">떡상 ×1.5↑<span class="pl-chip__n">${hotCount}</span></button>` : ''}</div>
       <span class="pl-grow"></span>
       ${tsel('kind', KINDS, S.kind, '종류')}
       ${tsel('cat', [['all', '카테고리']].concat(cats.map((c) => [c, c])), S.cat, '카테고리')}
+      ${collections.length ? tsel('coll', [['all', '컬렉션'], ['none', '컬렉션 없음']].concat(collections.map((c) => [c.id, `${c.name} (${links.filter((l) => l.coll === c.id).length})`])), S.coll, '컬렉션') : ''}
     </div>
     <div class="pl-frow pl-frow--gap8">
       <input type="checkbox" class="pl-check" data-act="selAll" ${allSel ? 'checked' : ''} aria-label="전체 선택">
@@ -328,7 +337,7 @@ function recentRow(r, saved) {
   const pAttrs = p ? ` data-pid="${esc(p.id)}" data-on="${p.online ? 1 : 0}" data-name="${esc(p.name)}"` : '';
   const goTip = p ? (p.online ? `‘${p.name}’ 프로필에서 열기` : '오프라인 프로필 — 이 프로필에서 새 탭으로 열기')
     : isOpen ? '열려 있는 화면으로 이동' : '새 탭으로 다시 열기';
-  return `<div class="pl-recent${p && !p.online ? ' is-offline' : ''}">
+  return `<div class="pl-recent${p && !p.online ? ' is-offline' : ''}" data-row="${esc(r.url)}" tabindex="-1">
     <button type="button" class="pl-recent__main" data-act="rGo" data-val="${esc(r.url)}"${pAttrs} title="${esc(goTip)}">
       <span class="pl-recent__media">${media}</span>
       <span class="pl-recent__text">
@@ -374,9 +383,10 @@ function renderRecent() {
       <div class="pl-seg" role="group" aria-label="정렬">${[['new', '최근 순'], ['old', '오래된 순']].map(([id, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.rsort === id}" data-act="rsort" data-val="${id}">${l}</button>`).join('')}</div>
     </div>
   </div>
-  <div class="pl-scroll pl-scroll--bar">${notice}${list.length ? `<div class="pl-recent-list" data-rows>${list.slice(0, S.limit).map((r) => recentRow(r, saved)).join('')}</div>${list.length > S.limit ? '<div class="pl-more" data-more aria-hidden="true"></div>' : ''}` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>
+  <div class="pl-scroll pl-scroll--bar">${notice}${list.length ? `<div class="pl-recent-list" data-rows>${withGroups(list.slice(0, S.limit), null, (r) => recentRow(r, saved), (r) => dayLabel(r.at))}</div>${list.length > S.limit ? '<div class="pl-more" data-more aria-hidden="true"></div>' : ''}` : emptyState(total ? '검색 결과가 없어요' : '아직 기록된 화면이 없어요', total ? '다른 검색어를 입력해 보세요.' : '탭을 보면 여기에 차례대로 쌓여요.', 'clock')}</div>
   <div class="pl-bar" role="toolbar" aria-label="최근 화면 작업">
     <span class="pl-bar__count">${dupCount ? `중복 ${dupCount}개` : `열린 탭 ${openTabList.length}개`}</span>
+    <button type="button" class="pl-bar__action" data-act="rSortSites" title="창마다 탭을 사이트(도메인)별로 모아 순서를 정리해요. 탭은 닫지 않아요.">${icon('sortSite', 'pl-i--md')}사이트별 정렬</button>
     <button type="button" class="pl-bar__action" data-act="rDedupe" title="같은 주소로 여러 개 열린 탭을 1개만 남기고 닫아요">${icon('copy', 'pl-i--md')}중복 링크 닫기</button>
   </div>`;
 }
@@ -455,6 +465,28 @@ function renderWatch() {
 }
 
 // ------------------------------------------------------------------ frame
+// ------------------------------------------------------------------ group headers
+// Links sorted "채널별 묶기" and the recent screens (by day) get a header whenever the group changes.
+// prev = the item rendered just before this slice (appendMore continues a group without repeating it).
+const dayLabel = (at) => {
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const t = +d0;
+  return at >= t ? '오늘' : at >= t - 864e5 ? '어제' : at >= t - 6 * 864e5 ? '이번 주' : at >= t - 29 * 864e5 ? '이번 달' : '그 이전';
+};
+function linkGroupOf() { return S.sort === 'channel' ? chanName : null; }
+function withGroups(items, prev, rowFn, groupOf, counts) {
+  if (!groupOf) return items.map(rowFn).join('');
+  let last = prev ? groupOf(prev) : null, html = '';
+  for (const it of items) {
+    const g = groupOf(it);
+    if (g !== last) { html += `<div class="pl-group"><span class="pl-group__name">${esc(g || '기타')}</span>${counts ? `<span class="pl-group__n">${counts.get(g) || 0}개</span>` : ''}</div>`; last = g; }
+    html += rowFn(it);
+  }
+  return html;
+}
+const groupCounts = (list) => (S.sort === 'channel' ? countBy(list, chanName) : null);
+const countBy = (list, fn) => { const m = new Map(); for (const x of list) { const k = fn(x); m.set(k, (m.get(k) || 0) + 1); } return m; };
+
 // ------------------------------------------------------------------ progressive list
 // Long lists render PAGE rows first; a sentinel below the rows appends the next PAGE when it comes
 // within 800px of the viewport. Keeps first paint fast and the DOM small (1,000 links used to mean
@@ -473,11 +505,11 @@ function appendMore() {
   let html = '', total = 0;
   if (S.tab === 'links') {
     const list = filtered(); total = list.length;
-    html = list.slice(S.limit, S.limit + PAGE).map(S.view === 'thumb' ? tile : S.view === 'detail' ? rowDetail : rowList).join('');
+    html = withGroups(list.slice(S.limit, S.limit + PAGE), list[S.limit - 1], S.view === 'thumb' ? tile : S.view === 'detail' ? rowDetail : rowList, linkGroupOf(), groupCounts(list));
   } else if (S.tab === 'recent') {
     const list = recentFiltered(); total = list.length;
     const saved = new Set(links.map((l) => rkey(l.url)));
-    html = list.slice(S.limit, S.limit + PAGE).map((r) => recentRow(r, saved)).join('');
+    html = withGroups(list.slice(S.limit, S.limit + PAGE), list[S.limit - 1], (r) => recentRow(r, saved), (r) => dayLabel(r.at));
   }
   S.limit += PAGE;
   rows.insertAdjacentHTML('beforeend', html);
@@ -490,6 +522,7 @@ function render() {
   const refocus = active && active.id ? active.id : null;
   const selStart = active && active.selectionStart;
   // keep the list where the user left it (storage updates re-render the panel)
+  if (!S.focusRow && active && active.dataset && active.dataset.row) S.focusRow = active.dataset.row; // keyboard focus survives re-render
   const prevScroll = app.querySelector('.pl-scroll');
   const keep = prevScroll ? { tab: S.tab, top: prevScroll.scrollTop } : null;
   const dark = currentTheme() === 'dark';
@@ -498,10 +531,11 @@ function render() {
   app.innerHTML = `
     <header class="pl-tabs-row">
       <nav class="pl-tabs" role="tablist">
-        ${[['links', '수집 링크', links.length], ['recent', '최근 화면', ''], ['keywords', '키워드', ''], ['watch', '워치리스트', watch.length]].map(([id, l, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}">${l}${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
+        ${[['links', '수집 링크', '수집', links.length], ['recent', '최근 화면', '최근', ''], ['keywords', '키워드', '키워드', ''], ['watch', '워치리스트', '워치', watch.length]].map(([id, l, s, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}" title="${l}"><span class="pl-tab__full">${l}</span><span class="pl-tab__short">${s}</span>${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
       </nav>
       <div class="pl-sp__tools">
         <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="collectWin" aria-label="현재 창의 링크 모으기" title="현재 창의 링크 모으기">${icon('collect', 'pl-i--lg')}</button>
+        <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="marksToggle" aria-pressed="${!showMarks}" aria-label="${showMarks ? '페이지 선택 표시 숨기기' : '페이지 선택 표시 보이기'}" title="${showMarks ? '페이지 선택 표시 숨기기' : '페이지 선택 표시 보이기'} (Alt+Shift+M)">${icon(showMarks ? 'eye' : 'eyeOff', 'pl-i--lg')}</button>
         <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="theme" aria-label="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}" title="${dark ? '밝은 테마로 전환' : '어두운 테마로 전환'}">${icon(dark ? 'sun' : 'moon', 'pl-i--lg')}</button>
         <button type="button" class="pl-ibtn pl-ibtn--sm" data-act="options" aria-label="설정" title="설정">${icon('sliders', 'pl-i--lg')}</button>
       </div>
@@ -511,6 +545,11 @@ function render() {
   const sc = app.querySelector('.pl-scroll');
   if (sc && keep && keep.tab === S.tab && keep.top && !S.toTop) sc.scrollTop = keep.top;
   S.toTop = false;
+  if (S.focusRow && refocus !== 'q' && refocus !== 'rq' && (document.activeElement === document.body || !document.activeElement)) {
+    const el = [...app.querySelectorAll('[data-row]')].find((r) => r.dataset.row === S.focusRow);
+    if (el) el.focus({ preventScroll: true });
+  }
+  S.focusRow = null;
   watchMore();
 }
 
@@ -602,6 +641,62 @@ async function saveThumbsZip(items) {
   toast(`썸네일 ${files.length}개를 압축 파일 하나로 저장했어요${miss ? ` (${miss}개는 가져오지 못함)` : ''}`);
 }
 
+// Delete without asking first: the toast offers 되돌리기 for 6 seconds. Undo puts the removed links
+// back at their old positions (changes made meanwhile, e.g. details arriving, are kept).
+async function deleteLinks(ids) {
+  if (!ids.length) return;
+  const set = new Set(ids);
+  const removed = links.map((l, i) => [i, l]).filter(([, l]) => set.has(l.id));
+  await removeLinks(ids);
+  ids.forEach((id) => S.sel.delete(id));
+  toast(`${removed.length}개를 목록에서 삭제했어요`, 'success', {
+    label: '되돌리기',
+    run: async () => {
+      const cur = await getLinks();
+      const have = new Set(cur.map((l) => l.id));
+      for (const [i, l] of removed) if (!have.has(l.id)) cur.splice(Math.min(i, cur.length), 0, l);
+      await setLinks(cur);
+      toast('삭제를 되돌렸어요');
+    }
+  });
+}
+
+// 컬렉션: links carry coll = collection id; collections live in storage.local
+async function saveCollections(list) { collections = list; await chrome.storage.local.set({ [STORAGE.collections]: list }); }
+async function assignCollection(ids) {
+  if (!ids.length) return;
+  const items = links.filter((l) => ids.includes(l.id));
+  const common = items.every((l) => l.coll && l.coll === items[0].coll) ? items[0].coll : '';
+  const r = await collectionModal({ collections, count: ids.length, current: common });
+  if (!r) return;
+  let id = r.id, name = '';
+  if (r.remove) id = '';
+  else if (!id) {
+    name = r.name;
+    const found = collections.find((c) => c.name === name);
+    id = found ? found.id : 'c' + Date.now().toString(36);
+    if (!found) await saveCollections(collections.concat({ id, name }));
+  }
+  await updateLinks(ids.map((i) => ({ id: i, coll: id })));
+  const cname = id ? (collections.find((c) => c.id === id) || { name }).name : '';
+  toast(id ? `‘${cname}’ 컬렉션에 ${ids.length}개를 넣었어요` : `${ids.length}개를 컬렉션에서 뺐어요`);
+}
+
+// 사이트별 정렬: inside every window, group unpinned tabs by site (then title). Nothing is closed.
+async function sortTabsBySite() {
+  const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+  let moved = 0;
+  for (const w of wins) {
+    const tabs = (w.tabs || []).filter((t) => !t.pinned);
+    const base = (w.tabs || []).filter((t) => t.pinned).length;
+    const sorted = [...tabs].sort((a, b) => hostOf(a.url || '').localeCompare(hostOf(b.url || '')) || (a.index - b.index));
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].index !== base + i) { await chrome.tabs.move(sorted[i].id, { index: base + i }); moved++; }
+    }
+  }
+  toast(moved ? '탭을 사이트별로 정렬했어요' : '이미 사이트별로 정렬돼 있어요');
+}
+
 async function bookmark(items) {
   const [root] = await chrome.bookmarks.search({ title: 'Power Link' });
   const folder = root && !root.url ? root : await chrome.bookmarks.create({ title: 'Power Link' });
@@ -667,7 +762,11 @@ app.addEventListener('click', async (e) => {
     case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
-    case 'bDelete': { const ids = targetIds(); if (!(await confirmModal({ title: '목록에서 삭제', message: `수집 링크 ${ids.length}개를 목록에서 삭제할까요?`, ok: '삭제' }))) return; await removeLinks(ids); } S.sel.clear(); return;
+    case 'bDelete': await deleteLinks(targetIds()); return;
+    case 'bColl': await assignCollection(targetIds()); return;
+    case 'hot': S.hot = !S.hot; resetLimit(); break;
+    case 'marksToggle': await chrome.storage.local.set({ [STORAGE.showMarks]: !showMarks }); return;
+    case 'rSortSites': await sortTabsBySite(); await refreshOpenTabs(); break;
     case 'bClear': S.sel.clear(); break;
     case 'kwSource': S.kwSource = val; break;
     case 'kwFilter': S.q = val; S.tab = 'links'; resetLimit(); break;
@@ -690,7 +789,55 @@ app.addEventListener('change', async (e) => {
   if (e.target.id === 'cat') { S.cat = e.target.value; resetLimit(); render(); }
   if (e.target.id === 'kind') { S.kind = e.target.value; resetLimit(); render(); }
   if (e.target.id === 'sort') { S.sort = e.target.value; resetLimit(); render(); }
+  if (e.target.id === 'coll') { S.coll = e.target.value; resetLimit(); render(); }
   if (e.target.dataset.act === 'cat') await updateLink(e.target.dataset.id, { category: e.target.value });
+});
+
+// ------------------------------------------------------------------ keyboard
+// /  search · ↑↓ (j/k) move · Space select · Enter open · Delete remove (undo in the toast)
+// Esc clear selection / leave search · Ctrl+A select all (수집 링크)
+const typing = (el) => !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(el.type)));
+const rowEls = () => [...app.querySelectorAll('[data-row]')];
+function focusRow(el) { if (!el) return; el.focus(); el.scrollIntoView({ block: 'nearest' }); }
+document.addEventListener('keydown', async (e) => {
+  if (document.querySelector('.pl-sheet') || e.isComposing) return; // a modal handles its own keys
+  const t = e.target;
+  const search = () => app.querySelector('#q, #rq');
+  if (e.key === '/' && !typing(t)) { e.preventDefault(); const q = search(); if (q) { q.focus(); q.select(); } return; }
+  if (typing(t)) {
+    if ((t.id === 'q' || t.id === 'rq') && e.key === 'Escape') t.blur();
+    if ((t.id === 'q' || t.id === 'rq') && e.key === 'ArrowDown') { e.preventDefault(); focusRow(rowEls()[0]); }
+    return;
+  }
+  if (S.tab !== 'links' && S.tab !== 'recent') return;
+  const rows = rowEls();
+  const cur = t.closest && t.closest('[data-row]');
+  const i = cur ? rows.indexOf(cur) : -1;
+  if (e.key === 'ArrowDown' || e.key === 'j') {
+    e.preventDefault();
+    if (i >= rows.length - 1) appendMore();
+    const all = rowEls(); focusRow(all[Math.min(i + 1, all.length - 1)]);
+  } else if (e.key === 'ArrowUp' || e.key === 'k') {
+    e.preventDefault();
+    if (i <= 0) { const q = search(); if (q) q.focus(); } else focusRow(rows[i - 1]);
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && S.tab === 'links') {
+    e.preventDefault(); filtered().forEach((l) => S.sel.add(l.id)); render();
+  } else if (e.key === 'Escape') {
+    if (S.sel.size) { S.sel.clear(); render(); }
+  } else if (cur && e.key === ' ' && S.tab === 'links') {
+    e.preventDefault();
+    const id = cur.dataset.row; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); render();
+  } else if (cur && e.key === 'Enter' && t === cur) {
+    e.preventDefault();
+    if (S.tab === 'links') { const it = links.find((l) => l.id === cur.dataset.row); if (it) chrome.tabs.create({ url: it.url, active: true }); }
+    else cur.querySelector('[data-act="rGo"]').click();
+  } else if (cur && (e.key === 'Delete' || e.key === 'Backspace')) {
+    e.preventDefault();
+    const next = rows[i + 1] || rows[i - 1];
+    S.focusRow = next ? next.dataset.row : null;
+    if (S.tab === 'links') await deleteLinks(S.sel.size ? [...S.sel] : [cur.dataset.row]);
+    else cur.querySelector('[data-act="rDel"]').click();
+  }
 });
 
 chrome.storage.onChanged.addListener(async (ch, area) => {
@@ -700,6 +847,8 @@ chrome.storage.onChanged.addListener(async (ch, area) => {
   if (area === 'local' && ch[STORAGE.recentOthers]) { recentOthers = ch[STORAGE.recentOthers].newValue || { profiles: [] }; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.bridge]) { bridge = ch[STORAGE.bridge].newValue || null; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
+  if (area === 'local' && ch[STORAGE.collections]) { collections = ch[STORAGE.collections].newValue || []; if (S.tab === 'links') render(); }
+  if (area === 'local' && ch[STORAGE.showMarks]) { showMarks = ch[STORAGE.showMarks].newValue !== false; render(); }
   if (area === 'local' && ch.pl_theme) render(); // header icon follows the theme
   if (area === 'local' && ch.pl_watchCheckedAt) watchCheckedAt = ch.pl_watchCheckedAt.newValue;
   if (area === 'sync' && ch[STORAGE.settings]) { settings = await getSettings(); render(); }
@@ -719,6 +868,7 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (info.url || info.status ==
   [links, watch] = await Promise.all([getLinks(), getWatch()]);
   recent = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
   recentOthers = (await chrome.storage.local.get(STORAGE.recentOthers))[STORAGE.recentOthers] || { profiles: [] };
+  { const r = await chrome.storage.local.get([STORAGE.collections, STORAGE.showMarks]); collections = r[STORAGE.collections] || []; showMarks = r[STORAGE.showMarks] !== false; }
   bridge = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || null;
   ({ pl_watchCheckedAt: watchCheckedAt } = await chrome.storage.local.get('pl_watchCheckedAt'));
   await themeReady;

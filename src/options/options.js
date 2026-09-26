@@ -9,6 +9,7 @@ const app = document.getElementById('app');
 let settings, apiKey = '', showKey = false, keyStatus = null, quota = 0, linkCount = 0, fieldPlat = 'yt', lastDemo = null, catDraft = '';
 let profileName = ''; // storage.local — sync에 두면 같은 계정의 프로필끼리 이름이 겹쳐 써짐
 let bridge = null, ruleEdit = -1;
+let collections = [], collCounts = {}; // 컬렉션 (storage.local) and how many links each holds
 const LEGACY = { collect: 'fields' };
 let tab = (location.hash || '#rules').slice(1);
 tab = LEGACY[tab] || tab;
@@ -51,7 +52,7 @@ function viewRules() {
       <div class="pl-rule__line">
         <button type="button" role="switch" class="pl-switch" aria-checked="${r.enabled !== false}" data-rule="${i}" data-rk="enabled" aria-label="규칙 사용"></button>
         <span class="pl-rule__keys"><kbd class="pl-kbd pl-kbd--md">${MOD[r.mod] || r.mod}</kbd><span class="pl-muted">+</span><span>${r.button === 'left' ? '좌클릭' : '우클릭'} 드래그</span></span>
-        <span class="pl-rule__shape"><span class="pl-rule__mark ${r.shape === 'lasso' ? 'pl-rule__mark--lasso' : ''}" style="border-color:${esc(r.color)}" title="규칙 색"></span>${r.shape === 'lasso' ? '자유도형' : '박스'}</span>
+        <span class="pl-rule__shape"><span class="pl-rule__mark ${r.shape === 'lasso' ? 'pl-rule__mark--lasso' : ''}" style="border-color:${esc(r.color)}" title="규칙 색"></span>${r.shape === 'lasso' ? '선 긋기' : '박스'}</span>
         ${icon('arrow', 'pl-muted')}
         <span class="pl-rule__action">${ACTIONS[r.action]?.label || ''}${bad.has(r.id) ? '<span class="pl-caption" style="font-weight:400;"> · 단축키가 겹쳐요</span>' : ''}</span>
         <button type="button" class="pl-ibtn pl-ibtn--lg ${ruleEdit === i ? 'is-on' : ''}" data-rule-edit="${i}" aria-label="규칙 편집" aria-expanded="${ruleEdit === i}" title="규칙 편집">${icon('more', 'pl-i--lg')}</button>
@@ -60,7 +61,7 @@ function viewRules() {
       <div class="pl-rule__edit">
         <span class="pl-label">키</span>${selectBox(`data-rule="${i}" data-rk="mod"`, [['ctrl', 'Ctrl'], ['shift', 'Shift'], ['alt', 'Alt']], r.mod, '수정 키', 90)}
         <span class="pl-label">버튼</span>${selectBox(`data-rule="${i}" data-rk="button"`, [['right', '우클릭 드래그'], ['left', '좌클릭 드래그']], r.button, '마우스 버튼', 140)}
-        <span class="pl-label">모양</span><div class="pl-seg" role="group" aria-label="모양">${[['box', '박스'], ['lasso', '자유도형']].map(([v, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${r.shape === v}" data-rule="${i}" data-rk="shape" data-val="${v}">${l}</button>`).join('')}</div>
+        <span class="pl-label">모양</span><div class="pl-seg" role="group" aria-label="모양">${[['box', '박스'], ['lasso', '선 긋기']].map(([v, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${r.shape === v}" data-rule="${i}" data-rk="shape" data-val="${v}">${l}</button>`).join('')}</div>
         <span class="pl-label">동작</span>${selectBox(`data-rule="${i}" data-rk="action"`, Object.entries(ACTIONS).map(([k, a]) => [k, a.label]), r.action, '동작', 140)}
         <span class="pl-label">색</span><span style="display:flex;gap:8px;">${RULE_COLORS.map((c) => `<button type="button" class="pl-swatch ${r.color === c ? 'is-on' : ''}" data-rule="${i}" data-rk="color" data-val="${c}" aria-label="규칙 색 ${c}" style="background:${c}"></button>`).join('')}</span>
         <button type="button" class="pl-btn pl-btn--outline pl-btn--sm pl-push" data-rule-del="${i}">${icon('trash', 'pl-i--sm')}규칙 삭제</button>
@@ -152,6 +153,15 @@ function viewCats() {
       </div>`).join('')}
     </div>
     <button type="button" class="pl-btn pl-btn--sm" id="addCatRule" style="align-self:flex-start;">${icon('plus', 'pl-i--sm')}규칙 추가</button>
+  </section>
+  <section class="pl-card pl-card--pad">
+    <div><div class="pl-h2">컬렉션</div><p class="pl-desc" style="margin-top:4px;">프로젝트처럼 링크를 묶는 폴더예요. 사이드바에서 링크를 고른 뒤 아래 바의 폴더 버튼으로 넣어요.</p></div>
+    ${collections.length ? `<div style="display:flex;flex-direction:column;gap:8px;">${collections.map((c, i) => `<div style="display:flex;align-items:center;gap:8px;">
+        ${icon('folder', 'pl-muted')}
+        <input type="text" class="pl-input pl-input--sm" data-coll-name="${i}" value="${esc(c.name)}" maxlength="40" aria-label="컬렉션 이름" style="flex:1;">
+        <span class="pl-caption" style="width:56px;text-align:right;">${collCounts[c.id] || 0}개</span>
+        <button type="button" class="pl-ibtn pl-ibtn--sm pl-ibtn--muted" data-coll-del="${i}" aria-label="${esc(c.name)} 컬렉션 삭제" title="컬렉션 삭제 (링크는 남아요)">${icon('trash', 'pl-i--sm')}</button>
+      </div>`).join('')}</div>` : '<p class="pl-caption">아직 컬렉션이 없어요.</p>'}
   </section>`;
 }
 
@@ -214,7 +224,8 @@ function viewGeneral() {
     ${toggleRow('bgTabs', '새 탭을 뒤에서 열기', '지금 보는 탭을 유지한 채 뒤쪽에 순서대로 열어요.')}
     ${toggleRow('notify', '완료 알림', '수집이 끝나면 페이지 오른쪽 아래에 결과를 보여줘요.')}
     ${row('많이 열 때 확인', '이 개수를 넘으면 열기 전에 한 번 물어봐요.', selectBox('id="confirmOver"', [10, 20, 50, 100].map((n) => [n, n + '개']), settings.confirmOver, '확인 개수', 110))}
-    ${row('사이드바 열기 단축키', '크롬 단축키 설정에서 바꿀 수 있어요.', `<span style="display:inline-flex;gap:4px;align-items:center;"><kbd class="pl-kbd pl-kbd--md">Alt</kbd><span class="pl-muted">+</span><kbd class="pl-kbd pl-kbd--md">Shift</kbd><span class="pl-muted">+</span><kbd class="pl-kbd pl-kbd--md">L</kbd></span><button type="button" class="pl-btn pl-btn--sm" id="shortcuts">변경</button>`)}
+    ${row('사용법 다시 보기', '마우스 드래그 3가지를 직접 따라 해 보는 안내 페이지를 열어요.', '<button type="button" class="pl-btn pl-btn--sm" id="openWelcome">열기</button>')}
+    ${row('사이드바 열기 단축키', '크롬 단축키 설정에서 바꿀 수 있어요. 페이지 선택 표시 켜기/끄기는 Alt + Shift + M.', `<span style="display:inline-flex;gap:4px;align-items:center;"><kbd class="pl-kbd pl-kbd--md">Alt</kbd><span class="pl-muted">+</span><kbd class="pl-kbd pl-kbd--md">Shift</kbd><span class="pl-muted">+</span><kbd class="pl-kbd pl-kbd--md">L</kbd></span><button type="button" class="pl-btn pl-btn--sm" id="shortcuts">변경</button>`)}
   </section>
   <section class="pl-card">
     ${row('설정 내보내기 / 가져오기', '규칙과 옵션을 JSON 파일로 옮겨요. API 키는 포함되지 않아요.', `<button type="button" class="pl-btn pl-btn--sm" id="exportSettings">내보내기</button><button type="button" class="pl-btn pl-btn--sm" id="importSettings">가져오기</button><input type="file" id="importFile" accept="application/json" hidden>`)}
@@ -337,6 +348,16 @@ app.addEventListener('click', async (e) => {
     return;
   }
   if (t.id === 'shortcuts') { chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); return; }
+  if (t.id === 'openWelcome') { chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') }); return; }
+  if (d.collDel !== undefined) {
+    const c = collections[+d.collDel];
+    if (!c || !(await confirmModal({ title: '컬렉션 삭제', message: `‘${c.name}’ 컬렉션을 삭제할까요?\n안에 있던 링크 ${collCounts[c.id] || 0}개는 목록에 그대로 남아요.`, ok: '삭제' }))) return;
+    const all = await getLinks();
+    await setLinks(all.map((l) => (l.coll === c.id ? Object.assign({}, l, { coll: '' }) : l)));
+    collections = collections.filter((x) => x.id !== c.id);
+    await chrome.storage.local.set({ [STORAGE.collections]: collections });
+    await loadCollections(); render(); flashSaved(); return;
+  }
   if (t.id === 'exportSettings') {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `PowerLink-settings-v${version()}.json`; a.click();
@@ -352,6 +373,12 @@ app.addEventListener('change', async (e) => {
   if (d.rule !== undefined && d.rk && t.tagName === 'SELECT') return setRule(+d.rule, { [d.rk]: t.value });
   if (d.crule !== undefined) return save({ catRules: settings.catRules.map((r, i) => (i === +d.crule ? Object.assign({}, r, { [d.ck]: t.value }) : r)) });
   if (t.id === 'confirmOver') return save({ confirmOver: +t.value });
+  if (d.collName !== undefined) {
+    const name = t.value.trim().slice(0, 40);
+    if (!name) { render(); return; }
+    collections = collections.map((c, i) => (i === +d.collName ? Object.assign({}, c, { name }) : c));
+    await chrome.storage.local.set({ [STORAGE.collections]: collections }); flashSaved(); return;
+  }
   if (t.id === 'recentMax') return save({ recentMax: +t.value });
   if (t.id === 'profileName') {
     profileName = t.value.trim().slice(0, 30);
@@ -390,8 +417,15 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch[STORAGE.bridge]) { bridge = ch[STORAGE.bridge].newValue || null; if (tab === 'recent') render(); }
 });
 
+async function loadCollections() {
+  collections = (await chrome.storage.local.get(STORAGE.collections))[STORAGE.collections] || [];
+  collCounts = {};
+  for (const l of await getLinks()) if (l.coll) collCounts[l.coll] = (collCounts[l.coll] || 0) + 1;
+}
+
 (async function init() {
   settings = await getSettings();
+  await loadCollections();
   apiKey = await getApiKey();
   profileName = (await chrome.storage.local.get(STORAGE.profileName))[STORAGE.profileName] || '';
   bridge = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || null;

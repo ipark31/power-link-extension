@@ -35,9 +35,11 @@ async function drag(mod, from, to, lasso) {
   await page.mouse.up({ button: 'right' }); await page.keyboard.up(mod); await page.waitForTimeout(1500);
 }
 await setClip('EMPTY');
-await drag('Alt', [10, 60], [900, 560], [[900, 60], [900, 560], [10, 560]]);
+// 선 긋기: one line through every link on the page selects them all (points read from the DOM)
+const through = await page.$$eval('.c a', (as) => as.map((a) => { const r = a.getBoundingClientRect(); return [Math.round(r.left + Math.min(20, r.width / 2)), Math.round(r.top + r.height / 2)]; }));
+await drag('Alt', [through[0][0] - 8, through[0][1]], through[through.length - 1], through);
 let links = await storeLinks();
-ok('Alt+우클릭 올가미 → 목록 저장', links.length >= 8, links.length + '개');
+ok('Alt+우클릭 선 긋기 → 목록 저장', links.length >= 8, links.length + '개');
 // dragging outlined links again deselects them (toggle) — start the next drags on a fresh page
 await page.reload(); await page.waitForTimeout(800);
 await setClip('EMPTY');
@@ -102,11 +104,12 @@ ok('사이드바 북마크', bm === 2, bm + '개');
 const dl = sp.waitForEvent('download', { timeout: 4000 }).catch(() => null);
 await sp.click('[data-act="bExcel"]'); const d = await dl; ok('사이드바 엑셀 다운로드', !!d, d ? d.suggestedFilename() : '');
 const cnt = (await storeLinks()).length;
+// delete right away (no confirmation) — the toast offers 되돌리기
 let nativeDialog = false; sp.once('dialog', (dg) => { nativeDialog = true; dg.dismiss(); });
-await sp.click('[data-act="bDelete"]'); await sp.waitForTimeout(300);
-ok('삭제 확인은 자체 모달(브라우저 confirm 아님)', !nativeDialog && (await sp.locator('.pl-sheet [data-act="confirmYes"]').count()) === 1);
-await sp.click('.pl-sheet [data-act="confirmYes"]'); await sp.waitForTimeout(800);
-ok('사이드바 삭제', (await storeLinks()).length === cnt - 2, `${cnt} → ${(await storeLinks()).length}`);
+await sp.click('[data-act="bDelete"]'); await sp.waitForTimeout(800);
+ok('사이드바 삭제 (확인 창 없이)', !nativeDialog && (await sp.locator('.pl-sheet').count()) === 0 && (await storeLinks()).length === cnt - 2, `${cnt} → ${(await storeLinks()).length}`);
+await sp.click('[data-toast-action]'); await sp.waitForTimeout(800);
+ok('알림의 되돌리기 → 삭제 복구', (await storeLinks()).length === cnt, `${(await storeLinks()).length}개`);
 await sp.close();
 
 console.log(R.join('\n'));

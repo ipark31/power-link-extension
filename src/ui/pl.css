@@ -17,6 +17,17 @@
        .is-on / .is-selected for non-ARIA states.
    ===================================================================== */
 
+/* Roboto ships with the extension (variable font, latin, 400–700): no network wait for Latin text
+   and numbers. Korean (Noto Sans KR) still comes from Google Fonts, split by unicode-range. */
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/roboto-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ---------------------------------------------------------------------
    1. TOKENS
    --------------------------------------------------------------------- */
@@ -257,6 +268,16 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 /* lazy <img> thumbnails fill their box (replaces background-image, which loaded every row at once) */
 .pl-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .pl-more { height: 1px; }
+/* keyboard focus on a row (tabindex -1, focused by ↑↓) */
+[data-row]:focus { outline: none; }
+[data-row]:focus-visible { outline: 2px solid var(--pl-text); outline-offset: -2px; border-radius: 8px; }
+/* group headers: 채널별 묶기 · 최근 화면 날짜 */
+.pl-group { display: flex; align-items: baseline; gap: 6px; padding: 14px 12px 6px; font-size: 12px; font-weight: 500; color: var(--pl-text2); }
+.pl-group__n { font-weight: 400; color: var(--pl-muted); }
+.pl-grid .pl-group { grid-column: 1 / -1; padding: 4px 0 0; margin-bottom: -10px; }
+.pl-recent-list .pl-group { padding: 12px 14px 4px; }
+.pl-coll-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.pl-coll-list .pl-chip[aria-pressed="false"] { background: none; box-shadow: inset 0 0 0 1px var(--pl-border); }
 
 .pl-up { color: var(--pl-up); font-weight: 500; flex-shrink: 0; }
 .pl-dur {
@@ -329,9 +350,11 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 /* the tab row shrinks with its own width (Chrome zoom / display scaling make the panel narrower
    than it looks): tighter padding first, then drop the counts, never cut a tab label */
 .pl-tabs-row { container-type: inline-size; }
-@container (max-width: 500px) { .pl-tab { padding: 0 7px; } .pl-tabs { gap: 0; } }
-@container (max-width: 440px) { .pl-tab__n { display: none; } }
-@container (max-width: 380px) { .pl-tab { padding: 0 5px; } .pl-tabs-row .pl-ibtn { width: 26px; } }
+.pl-tab__short { display: none; }
+@container (max-width: 540px) { .pl-tab { padding: 0 7px; } .pl-tabs { gap: 0; } }
+@container (max-width: 480px) { .pl-tab__n { display: none; } .pl-tabs-row .pl-ibtn { width: 26px; } }
+@container (max-width: 420px) { .pl-tab__full { display: none; } .pl-tab__short { display: inline; } }
+@container (max-width: 340px) { .pl-tab { padding: 0 5px; } }
 .pl-tab__n { font-size: 11px; font-weight: 400; color: var(--pl-muted); }
 
 .pl-filters { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; border-bottom: 1px solid var(--pl-divider); }
@@ -523,7 +546,7 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-rule__keys { display: flex; align-items: center; gap: 6px; width: 230px; flex-shrink: 0; }
 .pl-rule__shape { display: flex; align-items: center; gap: 8px; width: 110px; flex-shrink: 0; color: var(--pl-text2); }
 .pl-rule__mark { width: 16px; height: 12px; border: 1.6px dashed; border-radius: 2px; flex-shrink: 0; }
-.pl-rule__mark--lasso { border-radius: 50%; }
+.pl-rule__mark--lasso { height: 0; border-width: 2px 0 0; border-style: solid; border-radius: 1px; transform: rotate(-20deg); } /* 선 긋기 */
 .pl-rule__action { flex: 1; font-weight: 500; min-width: 0; }
 .pl-rule__edit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 0 20px 16px 76px; }
 .pl-rule__edit .pl-label { margin-right: -8px; }
@@ -565,6 +588,22 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pl-table td { padding: 8px 0; border-top: 1px solid var(--pl-divider); color: var(--pl-text2); }
 .pl-table td:last-child { text-align: right; font-weight: 500; color: var(--pl-text); }
+
+/* first-run guide (src/welcome) */
+.pl-welcome { min-height: 100vh; padding: 40px 16px 64px; }
+.pl-welcome__wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.pl-welcome__head { display: flex; align-items: center; gap: 16px; }
+.pl-wsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pl-wstep { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--pl-border); border-radius: 10px; }
+.pl-wstep__title { font-size: 14px; }
+.pl-wstep__mark { width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--pl-border); display: grid; place-items: center; }
+.pl-wstep.is-done { background: var(--pl-bg2); }
+.pl-wstep.is-done .pl-wstep__mark { border-color: var(--pl-online); background: var(--pl-online); color: #FFFFFF; }
+.pl-wdemo { height: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.pl-demo a.pl-wcard { position: static; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: var(--pl-bg); color: var(--pl-text); text-decoration: none; }
+.pl-wcard__thumb { aspect-ratio: 16 / 9; border-radius: 8px; background: var(--pl-thumb); }
+.pl-wcard__t { font-size: 13px; font-weight: 500; }
+.pl-wtips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--pl-text2); line-height: 1.6; }
 
 /* ---------------------------------------------------------------------
    7. UTILITIES

@@ -9,7 +9,7 @@
   const DRAG_START = 8;          // px before a press becomes a drag
   const EDGE = 40;               // px from viewport edge that triggers autoscroll
   const ACTION_LABEL = { copy: '복사', tabs: '새 탭으로 열기', window: '새 창으로 열기', save: '목록에 저장' };
-  const SHAPE_LABEL = { box: '박스', lasso: '자유도형' };
+  const SHAPE_LABEL = { box: '박스', lasso: '선 긋기' };
   const MOD_LABEL = { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', none: '' };
   const IS_WIN = /Win/i.test(navigator.platform || navigator.userAgent);
 
@@ -43,7 +43,7 @@
     .layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
     svg.draw { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
     .box { position: absolute; border: 2px dashed var(--tone); border-radius: 6px; background: color-mix(in srgb, var(--tone) 7%, transparent); display: none; }
-    svg.draw path { fill: color-mix(in srgb, var(--tone) 6%, transparent); stroke: var(--tone); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; stroke-linecap: round; }
+    svg.draw path { fill: none; stroke: var(--tone); stroke-width: 3; stroke-opacity: .85; stroke-linejoin: round; stroke-linecap: round; }
     .marks { position: absolute; inset: 0; overflow: hidden; }
     .marks-doc { position: absolute; left: 0; top: 0; will-change: transform; }
     .mark { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 6%, transparent); }
@@ -88,6 +88,7 @@
     pill = root.querySelector('.pill');
     toastWrap = root.querySelector('.toasts');
     (document.documentElement || document.body).appendChild(host);
+    applyShowMarks();
   }
 
   // ---------------------------------------------------------------- rule matching
@@ -174,25 +175,38 @@
     const a = drag.points[0], b = pageOf(drag.cur.cx, drag.cur.cy);
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
   }
-  function inside(p, poly) {
-    let c = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const a = poly[i], b = poly[j];
-      if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) c = !c;
+  // "선 긋기" (shape id 'lasso'): the mouse draws an open line; every link the line crosses is
+  // selected. Segment vs. link box (grown by LINE_TOL px) — Liang–Barsky clipping.
+  const LINE_TOL = 3;
+  function segHitsRect(a, b, c) {
+    const x1 = c.x - LINE_TOL, y1 = c.y - LINE_TOL, x2 = c.x + c.w + LINE_TOL, y2 = c.y + c.h + LINE_TOL;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const p = [-dx, dx, -dy, dy], q = [a.x - x1, x2 - a.x, a.y - y1, y2 - a.y];
+    let t0 = 0, t1 = 1;
+    for (let i = 0; i < 4; i++) {
+      if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+      const r = q[i] / p[i];
+      if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+      else { if (r < t0) return false; if (r < t1) t1 = r; }
     }
-    return c;
-  }
-  // a link counts as selected when any part of it is inside the lasso
-  function touchesPoly(c, poly) {
-    const xs = [c.x, c.x + c.w / 2, c.x + c.w], ys = [c.y, c.y + c.h / 2, c.y + c.h];
-    for (const x of xs) for (const y of ys) if (inside({ x, y }, poly)) return true;
-    return poly.some((p) => p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h);
+    return true;
   }
   function computeHits() {
     const hits = new Set();
     if (drag.rule.shape === 'lasso') {
-      if (drag.points.length < 3) return hits;
-      for (const c of drag.cands) if (touchesPoly(c, drag.points)) hits.add(c);
+      // the line only grows: test just the segments added since the last frame, keep earlier hits
+      const pts = drag.points;
+      if (!drag.lineHits) { drag.lineHits = new Set(); drag.segDone = 1; }
+      for (let i = drag.segDone; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const minX = Math.min(a.x, b.x) - LINE_TOL, maxX = Math.max(a.x, b.x) + LINE_TOL, minY = Math.min(a.y, b.y) - LINE_TOL, maxY = Math.max(a.y, b.y) + LINE_TOL;
+        for (const c of drag.cands) {
+          if (drag.lineHits.has(c) || c.x > maxX || c.x + c.w < minX || c.y > maxY || c.y + c.h < minY) continue;
+          if (segHitsRect(a, b, c)) drag.lineHits.add(c);
+        }
+      }
+      drag.segDone = Math.max(1, pts.length);
+      for (const c of drag.lineHits) hits.add(c);
     } else {
       const b = boxRect();
       for (const c of drag.cands) if (c.x < b.x + b.w && c.x + c.w > b.x && c.y < b.y + b.h && c.y + c.h > b.y) hits.add(c);
@@ -312,7 +326,7 @@
     const sx = scrollX, sy = scrollY;
     if (drag.rule.shape === 'lasso') {
       boxEl.style.display = 'none';
-      pathEl.setAttribute('d', drag.points.length > 1 ? 'M ' + drag.points.map((p) => (p.x - sx).toFixed(1) + ' ' + (p.y - sy).toFixed(1)).join(' L ') + ' Z' : '');
+      pathEl.setAttribute('d', drag.points.length > 1 ? 'M ' + drag.points.map((p) => (p.x - sx).toFixed(1) + ' ' + (p.y - sy).toFixed(1)).join(' L ') : ''); // open line, not a closed shape
     } else {
       pathEl.setAttribute('d', '');
       const b = boxRect();
@@ -467,6 +481,13 @@
     if (e.target === document || e.target === document.documentElement || e.target === document.body) { if (!marksRaf) marksRaf = requestAnimationFrame(syncMarks); }
     else scheduleRelayout();
   }, { capture: true, passive: true });
+  // show / hide every outline (side panel eye button, Alt+Shift+M) — 'pl_showMarks' in storage.local
+  let showMarks = true;
+  const applyShowMarks = () => { const m = root && root.querySelector('.marks'); if (m) m.style.display = showMarks ? '' : 'none'; };
+  try {
+    chrome.storage.local.get('pl_showMarks', (r) => { if (!chrome.runtime.lastError && r && r.pl_showMarks === false) { showMarks = false; applyShowMarks(); } });
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.pl_showMarks) { showMarks = ch.pl_showMarks.newValue !== false; applyShowMarks(); } });
+  } catch (e) { /* extension context invalidated */ }
   // side panel deleted links → drop their outlines (only outlines whose link went into the list)
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
@@ -643,6 +664,18 @@
     if (rule.button === 'right' && !IS_WIN) suppressMenuUntil = Date.now() + 400; // mac/linux open menu on mousedown
     if (rule.button === 'left') e.preventDefault();
   }, true);
+
+  // A press made before this engine was injected on demand (src/core/loader.js): take it over so the
+  // drag that is already under way works. The rule is looked up again here (the loader only knows
+  // modifier + button).
+  {
+    const pending = globalThis.__PL_PRESS;
+    globalThis.__PL_PRESS = null;
+    if (pending && Date.now() - pending.t < 5000 && !press && !drag) {
+      const rule = (settings.rules || []).find((r) => r.enabled !== false && r.button === pending.rule.button && r.mod === pending.rule.mod);
+      if (rule) press = { rule, cx: pending.cx, cy: pending.cy };
+    }
+  }
 
   addEventListener('mousemove', (e) => {
     // The button was released where we could not see it (outside the window, over an iframe,

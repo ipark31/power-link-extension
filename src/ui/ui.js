@@ -23,6 +23,9 @@ const P = {
   external: '<path d="M14 4h6v6M20 4 10 14M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
   image: '<path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 15l5-5 4 4 3-3 6 6"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M3 3l18 18M10.6 5.1A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.1 3.9M6.2 6.3C3.7 8 2 12 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.4-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  sortSite: '<path d="M4 6h10M4 12h7M4 18h4M17 5v14M14 16l3 3 3-3"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   bookmark: '<path d="M6 4h12v17l-6-4-6 4V4Z"/>',
@@ -65,8 +68,9 @@ export const send = (msg) => new Promise((resolve) => {
 });
 
 // Dark pill toast. Green / red only on the small status dot.
+// Optional action ({ label, run }) adds a button (e.g. 되돌리기) and keeps the toast up for 6s.
 let toastWrap = null;
-export function toast(message, tone = 'success') {
+export function toast(message, tone = 'success', action = null) {
   if (!message) return;
   if (!toastWrap) {
     toastWrap = document.createElement('div');
@@ -78,8 +82,71 @@ export function toast(message, tone = 'success') {
   el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:18px;background:var(--pl-bar);border:1px solid var(--pl-bar-border);color:var(--pl-bar-text);font:500 12px/1.4 var(--pl-font);box-shadow:var(--pl-shadow-bar);animation:pl-in .2s ease;max-width:340px;';
   el.innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span><span></span>`;
   el.lastChild.textContent = message;
+  const close = () => { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(() => el.remove(), 220); };
+  if (action) {
+    el.style.pointerEvents = 'auto';
+    el.style.padding = '5px 6px 5px 14px';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.toastAction = '';
+    b.textContent = action.label;
+    b.style.cssText = 'margin-left:6px;height:26px;padding:0 12px;border:0;border-radius:13px;background:var(--pl-bar-text);color:var(--pl-bar);font:500 12px var(--pl-font);cursor:pointer;';
+    b.addEventListener('click', async () => { close(); await action.run(); });
+    el.appendChild(b);
+  }
   toastWrap.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; setTimeout(() => el.remove(), 220); }, 2600);
+  setTimeout(close, action ? 6000 : 2600);
+}
+
+// Pick a collection for links. Resolves { id } (existing or newly created: { id: null, name }),
+// { remove: true } or null (cancel).
+export function collectionModal({ collections = [], count = 1, current = '' } = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'pl-app pl-sheet';
+    wrap.innerHTML = `<div class="pl-sheet__card pl-sheet__card--wide" role="dialog" aria-modal="true" aria-labelledby="plCollTitle">
+      <div class="pl-sheet__title" id="plCollTitle">컬렉션에 넣기</div>
+      <div class="pl-sheet__subject"></div>
+      <div class="pl-coll-list" role="radiogroup" aria-label="컬렉션"></div>
+      <div class="pl-coll-new"><input class="pl-input pl-input--sm" id="plCollNew" maxlength="40" placeholder="새 컬렉션 이름 (Enter)" aria-label="새 컬렉션 이름"></div>
+      <div class="pl-sheet__acts">
+        ${current ? '<button type="button" class="pl-btn pl-btn--outline" data-act="collRemove" style="margin-right:auto">컬렉션에서 빼기</button>' : ''}
+        <button type="button" class="pl-btn" data-act="collCancel">취소</button>
+        <button type="button" class="pl-btn pl-btn--ink" data-act="collOk">넣기</button>
+      </div>
+    </div>`;
+    wrap.querySelector('.pl-sheet__subject').textContent = `링크 ${count}개`;
+    const list = wrap.querySelector('.pl-coll-list');
+    let pick = current || (collections[0] && collections[0].id) || '';
+    const draw = () => {
+      list.innerHTML = collections.length ? '' : '<span class="pl-caption">아직 컬렉션이 없어요. 아래에 이름을 입력해 만드세요.</span>';
+      for (const c of collections) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'pl-chip'; b.setAttribute('role', 'radio');
+        b.setAttribute('aria-pressed', String(pick === c.id)); b.setAttribute('aria-checked', String(pick === c.id));
+        b.dataset.coll = c.id; b.textContent = c.name;
+        list.appendChild(b);
+      }
+    };
+    draw();
+    const input = wrap.querySelector('#plCollNew');
+    const done = (v) => { wrap.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const ok = () => { const name = input.value.trim(); if (name) done({ id: null, name }); else if (pick) done({ id: pick }); else input.focus(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); ok(); }
+    };
+    wrap.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-coll]');
+      if (c) { pick = c.dataset.coll; input.value = ''; draw(); return; }
+      const t = e.target.closest('[data-act]');
+      if (t) { const a = t.dataset.act; if (a === 'collOk') ok(); else if (a === 'collRemove') done({ remove: true }); else done(null); }
+      else if (!e.target.closest('.pl-sheet__card')) done(null);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(wrap);
+    (collections.length ? wrap.querySelector('[data-act="collOk"]') : input).focus();
+  });
 }
 
 // Shared confirmation modal (replaces the browser's confirm()). Resolves true on OK.

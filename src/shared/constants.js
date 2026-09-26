@@ -101,5 +101,7 @@ export const STORAGE = {
   profileId: 'pl_profileId',       // 이 프로필의 고유 ID
   profileName: 'pl_profileName',   // 다른 프로필에 보일 이 프로필의 이름
   recentOthers: 'pl_recentOthers', // 다른 프로필들의 최근 화면 { at, profiles: [...] }
-  bridge: 'pl_bridge'              // 도우미 연결 상태 { connected, at }
+  bridge: 'pl_bridge',             // 도우미 연결 상태 { connected, at }
+  collections: 'pl_collections',   // 컬렉션 [{ id, name }] — 링크의 coll 필드가 id를 가리킴
+  showMarks: 'pl_showMarks'        // 페이지 선택 테두리 표시 (false면 숨김)
 };

@@ -32,6 +32,21 @@ async function metrics(page) {
   return { get, cdp: c };
 }
 
+// ---- 0) what every tab carries before the drag engine is needed (loader only) vs. after it loads
+{
+  const p = await ctx.newPage();
+  await p.goto('http://localhost:8795/plain'); await wait(1200);
+  const c = await ctx.newCDPSession(p);
+  await c.send('HeapProfiler.collectGarbage').catch(() => {});
+  const heap = async () => (await c.send('Runtime.getHeapUsage')).usedSize;
+  const before = await heap();
+  await p.keyboard.down('Alt'); await wait(1200); await p.keyboard.up('Alt');
+  await c.send('HeapProfiler.collectGarbage').catch(() => {});
+  const after = await heap();
+  M.tab = { heapKB_loaderOnly: Math.round(before / 1024), heapKB_withEngine: Math.round(after / 1024), engineKB: Math.round((after - before) / 1024) };
+  await p.close();
+}
+
 // ---- 1) web page with 3,000 links
 const page = await ctx.newPage();
 await page.goto('http://localhost:8795/big'); await wait(1500);

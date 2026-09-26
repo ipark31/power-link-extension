@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Power Link v2.6.0",
-  "version": "2.6.0",
-  "version_name": "2.6.0",
+  "name": "Power Link v2.7.0",
+  "version": "2.7.0",
+  "version_name": "2.7.0",
   "description": "드래그로 링크를 모으고, 유튜브·틱톡·인스타그램·X·블로그 링크를 카드·표로 정리하는 크리에이터용 링크 수집기.",
   "author": "ipark31",
   "minimum_chrome_version": "116",
@@ -20,7 +20,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/shared/classify.js", "src/core/content.js"],
+      "js": ["src/core/loader.js"],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -29,6 +29,10 @@
     "open-sidepanel": {
       "suggested_key": { "default": "Alt+Shift+L" },
       "description": "수집 링크 사이드바 열기"
+    },
+    "toggle-marks": {
+      "suggested_key": { "default": "Alt+Shift+M" },
+      "description": "페이지의 선택 테두리 보이기/숨기기"
     }
   }
 }

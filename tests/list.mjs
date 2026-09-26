@@ -14,6 +14,7 @@ const links = Array.from({ length: 300 }, (_, i) => ({ id: 'L' + i, url: `https:
 const sp = await ctx.newPage(); sp.on('pageerror', (e) => R.push('ERR ' + e.message));
 await sp.setViewportSize({ width: 400, height: 800 });
 await sp.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`); await wait(500);
+await sp.bringToFront(); // the first-run guide tab opens on install; background tabs don't run IntersectionObserver
 await sp.evaluate(async (l) => { await chrome.storage.local.set({ pl_links: l }); }, links); await wait(600);
 const rows = () => sp.locator('.pl-lrow').count();
 ok('처음에는 60개만 그림', (await rows()) === 60, `${await rows()}개`);

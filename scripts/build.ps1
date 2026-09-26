@@ -1,7 +1,7 @@
 # Windows: builds dist\ and release\power-link-v<version>.zip
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
-$ver = (Get-Content manifest.json -Raw | ConvertFrom-Json).version
+$ver = (Get-Content manifest.json -Raw -Encoding UTF8 | ConvertFrom-Json).version  # UTF8: Windows PowerShell 5.1 would read the Korean text as ANSI
 Remove-Item dist -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force dist, release | Out-Null
 Copy-Item manifest.json dist\

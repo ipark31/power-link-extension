@@ -12,6 +12,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.alarms.create('pl-watch', { periodInMinutes: 360 });
   chrome.alarms.create('pl-bridge', { periodInMinutes: 1 });
   if (details.reason === 'update' || details.reason === 'install') await migrateV1();
+  // first install: open the hands-on guide (not on updates or reloads)
+  if (details.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') }).catch(() => {});
   seedRecent().catch(() => {});
 });
 
@@ -25,6 +27,11 @@ async function migrateV1() {
 }
 
 chrome.commands.onCommand.addListener(async (cmd, tab) => {
+  if (cmd === 'toggle-marks') {
+    const { pl_showMarks } = await chrome.storage.local.get('pl_showMarks');
+    await chrome.storage.local.set({ pl_showMarks: pl_showMarks === false });
+    return;
+  }
   if (cmd === 'open-sidepanel') {
     const win = tab?.windowId ?? (await chrome.windows.getCurrent()).id;
     try { await chrome.sidePanel.open({ windowId: win }); } catch (e) { /* needs user gesture */ }
@@ -539,6 +546,13 @@ const handlers = {
     const items = msg.ids.map((id) => all.find((l) => l.id === id)).filter(Boolean);
     const { text, html } = buildCopy(items, settings, msg.mode || settings.collect);
     return { ok: true, message: `링크 ${items.length}개를 복사했어요`, copyPayload: { text, html } };
+  },
+
+  // src/core/loader.js asks for the drag engine the first time it is about to be used on a page
+  'pl:loadEngine': async (msg, sender) => {
+    if (!sender.tab) return { ok: false };
+    await chrome.scripting.executeScript({ target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] }, files: ['src/shared/classify.js', 'src/core/content.js'] });
+    return { ok: true };
   },
 
   // page drag deselected already-outlined links → take them out of the side-panel list

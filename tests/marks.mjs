@@ -55,10 +55,10 @@ const s1 = await snap('2-select-box');
 ok('드래그 → 선택된 링크에 테두리', !(await same(before, s1)), lastDiff + 'px');
 ok('드래그 → 사이드바 목록에 추가', JSON.stringify(await listed()) === '[0,1,2,3,4]', JSON.stringify(await listed()));
 // Alt lasso around 링크 6~8 (save)
-await lasso([[10, 255], [180, 255], [180, 375], [10, 375], [10, 258]]);
+await lasso([[40, 250], [40, 300], [40, 365]]); // 선 긋기: a vertical line through 링크 6~8
 const s2 = await snap('3-select-lasso');
 ok('다른 링크를 선택하면 그 테두리도 함께 남음', !(await same(s1, s2)), lastDiff + 'px');
-ok('자유도형 선택도 목록에 추가', JSON.stringify(await listed()) === '[0,1,2,3,4,6,7,8]', JSON.stringify(await listed()));
+ok('선 긋기 선택도 목록에 추가', JSON.stringify(await listed()) === '[0,1,2,3,4,6,7,8]', JSON.stringify(await listed()));
 
 // 2) toggle: drag the outlined 링크 0~4 again → outlines off, removed from the list
 await drag('Control', 10, 15, 200, 205);
@@ -98,7 +98,7 @@ await page.keyboard.down('Shift'); await page.mouse.move(10, 375); await page.mo
 await page.mouse.move(200, 445, { steps: 12 }); await page.mouse.up({ button: 'right' }); await wait(900);
 ok('드래그 시작 전에 Shift를 떼면 → 새 탭 안 열림', ctx.pages().length === pages0, `탭 ${ctx.pages().length - pages0}개`);
 
-await page.reload(); await wait(1000); await park();
+await page.reload(); await page.evaluate(() => document.fonts.ready); await wait(1500); await park();
 ok('새로고침하면 테두리 사라짐', await same(before, await snap('12-reloaded')), lastDiff + 'px');
 console.log(R.join('\n'));
 await ctx.close(); srv.close();
