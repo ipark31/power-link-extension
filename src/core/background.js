@@ -344,17 +344,6 @@ async function checkWatchlist() {
 }
 
 // ------------------------------------------------------------------ downloads
-async function downloadThumbs(ids) {
-  const links = (await getLinks()).filter((l) => ids.includes(l.id) && l.thumb);
-  let n = 0;
-  for (const l of links) {
-    const safe = (l.title || 'thumbnail').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'thumbnail';
-    const ext = /\.png(\?|$)/i.test(l.thumb) ? 'png' : /\.webp(\?|$)/i.test(l.thumb) ? 'webp' : 'jpg';
-    try { await chrome.downloads.download({ url: l.thumb, filename: `PowerLink/thumbnails/${safe}.${ext}`, conflictAction: 'uniquify' }); n++; } catch (e) { /* skip */ }
-  }
-  return n;
-}
-
 // ------------------------------------------------------------------ message router
 const handlers = {
   'pl:grab': async (msg, sender) => runAction({ action: msg.action, links: msg.links || [], sourceTab: sender.tab, source: 'grab' }),
@@ -404,10 +393,6 @@ const handlers = {
     return { ok: true, message: n ? `유튜브 정보 ${n}개를 업데이트했어요` : '업데이트할 유튜브 링크가 없어요' };
   },
 
-  'pl:thumbs': async (msg) => {
-    const n = await downloadThumbs(msg.ids);
-    return { ok: true, message: n ? `썸네일 ${n}개를 다운로드 폴더에 저장했어요` : '저장할 썸네일이 없어요' };
-  },
 
   'pl:watchAdd': async (msg) => {
     const n = await addToWatch(msg.ids);

@@ -4,6 +4,7 @@ import { PLATFORMS, STORAGE } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
 import { icon, version, send, toast, writeClipboard } from '../ui/ui.js';
+import { makeZip, safeFileName } from '../shared/zip.js';
 
 const app = document.getElementById('app');
 const S = {
@@ -188,13 +189,13 @@ function ytState(it) {
 }
 
 // Ask the background to fetch missing YouTube details for what is on screen,
-// starting from the bottom of the list. Already-fetched links are skipped there.
+// in list order, top to bottom. Already-fetched links are skipped there.
 let kickTimer = 0;
 function kickEnrich() {
   if (!hasKey) return;
   clearTimeout(kickTimer);
   kickTimer = setTimeout(() => {
-    const ids = filtered().filter((l) => l.platform === 'yt' && !l.enrichedAt && !l.enrichTriedAt && (l.ids?.videoId || l.ids?.channelId || l.ids?.handle)).map((l) => l.id).reverse();
+    const ids = filtered().filter((l) => l.platform === 'yt' && !l.enrichedAt && !l.enrichTriedAt && (l.ids?.videoId || l.ids?.channelId || l.ids?.handle)).map((l) => l.id);
     if (ids.length) send({ type: 'pl:enrichAuto', ids });
   }, 300);
 }
@@ -240,7 +241,7 @@ function renderLinks() {
     <span class="pl-toolbar__count" data-tip="${S.sel.size ? '선택한 링크에 적용돼요' : '선택하지 않으면 지금 보이는 링크 전체에 적용돼요'}" data-tip-align="start">${S.sel.size ? `<b>${S.sel.size}</b>개 선택` : `전체 <b>${list.length}</b>개`}</span>
     <button type="button" class="pl-toolbar__btn" data-act="bCopy" aria-label="복사" data-tip="복사">${icon('copy')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bOpen" aria-label="새 탭으로 열기" data-tip="새 탭으로 열기">${icon('external')}</button>
-    <button type="button" class="pl-toolbar__btn" data-act="bThumbs" aria-label="썸네일 일괄 저장" data-tip="썸네일 일괄 저장">${icon('image')}</button>
+    <button type="button" class="pl-toolbar__btn" data-act="bThumbs" aria-label="썸네일 압축 저장" data-tip="썸네일 압축(zip) 저장">${icon('image')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bWatch" aria-label="워치리스트에 추가" data-tip="워치리스트에 추가">${icon('eye')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bBookmark" aria-label="북마크" data-tip="북마크에 추가">${icon('bookmark')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bExcel" aria-label="엑셀 다운로드" data-tip="엑셀 다운로드">${icon('download')}</button>
@@ -329,6 +330,63 @@ function downloadXls(items) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// All thumbnails in one ZIP (one download instead of a save dialog per image).
+// File name inside the ZIP: video title for posts, channel/account name for channel links.
+async function fetchImage(urls) {
+  for (const u of urls) {
+    try {
+      const r = await fetch(u);
+      if (!r.ok) continue;
+      const buf = new Uint8Array(await r.arrayBuffer());
+      if (buf.length < 1200 && /i\.ytimg\.com/.test(u)) continue; // YouTube's grey "no image" placeholder
+      const type = r.headers.get('content-type') || '';
+      const ext = /png/.test(type) ? 'png' : /webp/.test(type) ? 'webp' : /gif/.test(type) ? 'gif' : 'jpg';
+      return { buf, ext };
+    } catch (e) { /* try next */ }
+  }
+  return null;
+}
+async function saveThumbsZip(items) {
+  const list = items.filter((l) => l.thumb || l.ids?.videoId);
+  if (!list.length) { toast('저장할 썸네일이 없어요', 'warning'); return; }
+  toast(`썸네일 ${list.length}개를 모으는 중…`, 'warning');
+  const used = new Map();
+  const files = [];
+  let i = 0;
+  const worker = async () => {
+    while (i < list.length) {
+      const it = list[i++];
+      const vid = it.ids?.videoId;
+      const urls = vid && it.kind !== 'account'
+        ? [`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${vid}/sddefault.jpg`, it.thumb, `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`]
+        : [it.thumb];
+      const img = await fetchImage(urls.filter(Boolean));
+      if (!img) continue;
+      const base = safeFileName(it.kind === 'account' ? (it.account?.name || it.title) : (it.title || it.account?.name), 'thumbnail');
+      files.push({ order: list.indexOf(it), base, ext: img.ext, data: img.buf });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker));
+  if (!files.length) { toast('썸네일을 가져오지 못했어요', 'error'); return; }
+  files.sort((a, b) => a.order - b.order);
+  for (const f of files) { // number duplicates in list order: 제목.jpg, 제목 (2).jpg …
+    const n = (used.get(f.base) || 0) + 1;
+    used.set(f.base, n);
+    f.name = `${n > 1 ? `${f.base} (${n})` : f.base}.${f.ext}`;
+  }
+  const url = URL.createObjectURL(makeZip(files));
+  const d = new Date(), p = (x) => String(x).padStart(2, '0');
+  const filename = `PowerLink_썸네일_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.zip`;
+  try {
+    await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: 'uniquify' });
+  } catch (e) {
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const miss = list.length - files.length;
+  toast(`썸네일 ${files.length}개를 압축 파일 하나로 저장했어요${miss ? ` (${miss}개는 가져오지 못함)` : ''}`);
+}
+
 async function bookmark(items) {
   const [root] = await chrome.bookmarks.search({ title: 'Power Link' });
   const folder = root && !root.url ? root : await chrome.bookmarks.create({ title: 'Power Link' });
@@ -356,7 +414,7 @@ app.addEventListener('click', async (e) => {
     case 'options': chrome.runtime.openOptionsPage(); return;
     case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
     case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !confirm(`탭 ${urls.length}개를 열까요?`)) return; await send({ type: 'pl:openUrls', urls }); return; }
-    case 'bThumbs': report(await send({ type: 'pl:thumbs', ids: targetIds() })); return;
+    case 'bThumbs': await saveThumbsZip(selected()); return;
     case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
