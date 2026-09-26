@@ -571,7 +571,7 @@ button.pl-switch { border: 0; padding: 0; cursor: pointer; }
 .pl-options { display: flex; background: var(--pl-bg); overflow: hidden; }
 .pl-options__aside { width: 248px; flex-shrink: 0; padding: var(--pl-sp-9) var(--pl-sp-7); background: var(--pl-surface); border-right: 1px solid var(--pl-border); display: flex; flex-direction: column; gap: var(--pl-sp-2); }
 .pl-options__main { flex: 1; overflow: auto; padding: var(--pl-sp-11) var(--pl-sp-12); }
-.pl-options__content { max-width: 820px; display: flex; flex-direction: column; gap: var(--pl-sp-9); }
+.pl-options__content { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--pl-sp-9); }
 .pl-table-head { display: grid; align-items: center; gap: var(--pl-sp-6); padding: var(--pl-sp-5) 18px; background: var(--pl-surface-2); border-bottom: 1px solid var(--pl-border); font-size: var(--pl-fs-sm); font-weight: var(--pl-fw-semibold); color: var(--pl-text-muted); }
 .pl-table-row { display: grid; align-items: center; gap: var(--pl-sp-6); padding: var(--pl-sp-6) 18px; border-bottom: 1px solid var(--pl-divider); }
 .pl-swatch { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; }
