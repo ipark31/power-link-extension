@@ -46,9 +46,7 @@
     svg.draw path { fill: color-mix(in srgb, var(--tone) 6%, transparent); stroke: var(--tone); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; stroke-linecap: round; }
     .marks { position: absolute; inset: 0; overflow: hidden; }
     .marks-doc { position: absolute; left: 0; top: 0; will-change: transform; }
-    .mark { position: absolute; border: 2px dashed var(--tone); border-radius: 6px; background: color-mix(in srgb, var(--tone) 5%, transparent); }
-    svg.marks-svg { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; }
-    svg.marks-svg path { fill: color-mix(in srgb, var(--tone) 4%, transparent); stroke: var(--tone); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; stroke-linecap: round; }
+    .mark { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 6%, transparent); }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
     .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); white-space: nowrap; }
     .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; background: #272727; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -76,7 +74,7 @@
     host = document.createElement('power-link-overlay');
     host.style.cssText = 'all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483646;';
     root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `<style>${CSS}</style><div class="layer"><div class="marks"><div class="marks-doc"><svg class="marks-svg"></svg></div></div><div class="hls"></div><svg class="draw"><path d=""></path></svg><div class="box"></div><div class="pill"><b>0</b><div><div class="t"></div><div class="s"></div></div></div></div><div class="toasts"></div>`;
+    root.innerHTML = `<style>${CSS}</style><div class="layer"><div class="marks"><div class="marks-doc"></div></div><div class="hls"></div><svg class="draw"><path d=""></path></svg><div class="box"></div><div class="pill"><b>0</b><div><div class="t"></div><div class="s"></div></div></div></div><div class="toasts"></div>`;
     layer = root.querySelector('.layer');
     hlLayer = root.querySelector('.hls');
     svg = root.querySelector('svg.draw');
@@ -302,9 +300,12 @@
   const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
 
   // ---------------------------------------------------------------- kept selections
-  // A finished drag leaves its box / lasso on the page (page coordinates, follows scrolling,
-  // never blocks clicks) until the page reloads or the address changes (SPA navigation).
+  // After a drag, every link it selected keeps its highlight outline, so already-collected links
+  // are visible and not picked twice. The drag path itself (box / lasso) disappears as before.
+  // Outlines sit in page coordinates (follow scrolling, never block clicks) and stay until the
+  // page reloads or the address changes (SPA navigation).
   let marksHref = '', marksRaf = 0, marksTimer = 0;
+  let marked = new WeakMap(); // link element → its outline
   const marksDoc = () => root && root.querySelector('.marks-doc');
   function syncMarks() {
     marksRaf = 0;
@@ -314,27 +315,20 @@
   function clearMarks() {
     const doc = marksDoc();
     if (!doc) return;
-    doc.querySelectorAll('.mark').forEach((m) => m.remove());
-    doc.querySelector('.marks-svg').replaceChildren();
+    doc.replaceChildren();
+    marked = new WeakMap();
     clearInterval(marksTimer); marksTimer = 0;
   }
-  function keepMark(d) {
+  function keepMarks(rule, hits) {
+    if (!hits.size) return;
     ensureOverlay();
     if (marksHref !== location.href) { clearMarks(); marksHref = location.href; }
     const doc = marksDoc();
-    const tone = d.rule.color || '#2F6BFF';
-    if (d.rule.shape === 'lasso') {
-      if (d.points.length < 3) return;
-      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      p.setAttribute('d', 'M ' + d.points.map((q) => q.x.toFixed(1) + ' ' + q.y.toFixed(1)).join(' L ') + ' Z');
-      p.style.setProperty('--tone', tone);
-      doc.querySelector('.marks-svg').appendChild(p);
-    } else {
-      const a = d.points[0], b = pageOf(d.cur.cx, d.cur.cy);
-      const m = document.createElement('div');
-      m.className = 'mark';
-      m.style.cssText = `--tone:${tone};left:${Math.min(a.x, b.x)}px;top:${Math.min(a.y, b.y)}px;width:${Math.abs(a.x - b.x)}px;height:${Math.abs(a.y - b.y)}px`;
-      doc.appendChild(m);
+    const tone = rule.color || '#2F6BFF';
+    for (const c of hits) {
+      let m = marked.get(c.a);
+      if (!m) { m = document.createElement('div'); m.className = 'mark'; doc.appendChild(m); marked.set(c.a, m); }
+      m.style.cssText = `--tone:${tone};left:${c.x - 2}px;top:${c.y - 2}px;width:${c.w + 4}px;height:${c.h + 4}px`;
     }
     syncMarks();
     // SPA sites (YouTube…) change the address without reloading: drop marks from the old page
@@ -401,8 +395,8 @@
     if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = 0; }
     document.documentElement.style.removeProperty('user-select');
     if (!d) return;
-    keepMark(d);
     const hits = computeHitsFor(d);
+    keepMarks(d.rule, hits);
     const links = buildLinks(hits);
     const rule = d.rule;
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
