@@ -209,15 +209,15 @@ function renderLinks() {
     </div>
     <div class="pl-head pl-caption">
       <input type="checkbox" class="pl-checkbox" data-act="selAll" ${allSel ? 'checked' : ''} aria-label="전체 선택">
-      <span>${list.length}개 표시</span>
+      <span style="white-space:nowrap;">${list.length}개 표시</span>
       <select class="pl-select pl-select--sm pl-u-push" id="sort" aria-label="정렬" style="border:0;background:transparent;">${SORTS.map(([id, l]) => `<option value="${id}" ${S.sort === id ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <div class="pl-seg pl-seg--sm pl-seg--inline" role="group" aria-label="보기 방법">${[['list', '목록', 'list'], ['detail', '상세', 'detail'], ['thumb', '썸네일', 'grid']].map(([id, l, ic]) => `<button type="button" class="pl-seg__item" aria-pressed="${S.view === id}" data-act="view" data-val="${id}">${icon(ic, 'pl-i--sm')}${l}</button>`).join('')}</div>
     </div>
   </div>
   <div class="pl-panel__scroll" style="padding-bottom:72px;">${body}</div>
-  ${S.sel.size ? `
+  ${list.length ? `
   <div class="pl-toolbar">
-    <span class="pl-toolbar__count"><b>${S.sel.size}</b>개 선택</span>
+    <span class="pl-toolbar__count" data-tip="${S.sel.size ? '선택한 링크에 적용돼요' : '선택하지 않으면 지금 보이는 링크 전체에 적용돼요'}" data-tip-align="start">${S.sel.size ? `<b>${S.sel.size}</b>개 선택` : `전체 <b>${list.length}</b>개`}</span>
     <button type="button" class="pl-toolbar__btn" data-act="bCopy" aria-label="복사" data-tip="복사">${icon('copy')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bOpen" aria-label="새 탭으로 열기" data-tip="새 탭으로 열기">${icon('external')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bThumbs" aria-label="썸네일 일괄 저장" data-tip="썸네일 일괄 저장">${icon('image')}</button>
@@ -226,7 +226,7 @@ function renderLinks() {
     <button type="button" class="pl-toolbar__btn" data-act="bBookmark" aria-label="북마크" data-tip="북마크에 추가">${icon('bookmark')}</button>
     <button type="button" class="pl-toolbar__btn" data-act="bExcel" aria-label="엑셀 다운로드" data-tip="엑셀 다운로드">${icon('download')}</button>
     <button type="button" class="pl-toolbar__btn pl-toolbar__btn--danger" data-act="bDelete" aria-label="목록에서 삭제" data-tip="목록에서 삭제">${icon('trash')}</button>
-    <button type="button" class="pl-toolbar__btn pl-toolbar__btn--muted" data-act="bClear" aria-label="선택 해제" data-tip="선택 해제" data-tip-align="end">${icon('close')}</button>
+    ${S.sel.size ? `<button type="button" class="pl-toolbar__btn pl-toolbar__btn--muted" data-act="bClear" aria-label="선택 해제" data-tip="선택 해제" data-tip-align="end">${icon('close')}</button>` : ''}
   </div>` : ''}`;
 }
 
@@ -291,7 +291,9 @@ function render() {
 }
 
 // ------------------------------------------------------------------ actions
-const selected = () => links.filter((l) => S.sel.has(l.id));
+// Bulk actions apply to the selection, or to every visible link when nothing is selected.
+const selected = () => (S.sel.size ? links.filter((l) => S.sel.has(l.id)) : filtered());
+const targetIds = () => selected().map((l) => l.id);
 const report = (r) => toast(r?.message || (r?.ok ? '완료했어요' : '처리하지 못했어요'), r?.ok ? 'success' : 'error');
 
 async function saveMemo(id) {
@@ -336,14 +338,14 @@ app.addEventListener('click', async (e) => {
     case 'enrichOne': toast('유튜브 정보를 가져오는 중…', 'warning'); report(await send({ type: 'pl:enrich', ids: [id] })); return;
     case 'watchOne': report(await send({ type: 'pl:watchAdd', ids: [id] })); return;
     case 'options': chrome.runtime.openOptionsPage(); return;
-    case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: [...S.sel] }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
+    case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
     case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !confirm(`탭 ${urls.length}개를 열까요?`)) return; await send({ type: 'pl:openUrls', urls }); return; }
-    case 'bThumbs': report(await send({ type: 'pl:thumbs', ids: [...S.sel] })); return;
-    case 'bEnrich': toast('유튜브 정보를 가져오는 중…', 'warning'); report(await send({ type: 'pl:enrich', ids: [...S.sel] })); return;
-    case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: [...S.sel] })); return;
+    case 'bThumbs': report(await send({ type: 'pl:thumbs', ids: targetIds() })); return;
+    case 'bEnrich': toast('유튜브 정보를 가져오는 중…', 'warning'); report(await send({ type: 'pl:enrich', ids: targetIds() })); return;
+    case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
-    case 'bDelete': if (!confirm(`${S.sel.size}개를 목록에서 삭제할까요?`)) return; await removeLinks([...S.sel]); S.sel.clear(); return;
+    case 'bDelete': { const ids = targetIds(); if (!confirm(`${ids.length}개를 목록에서 삭제할까요?`)) return; await removeLinks(ids); } S.sel.clear(); return;
     case 'bClear': S.sel.clear(); break;
     case 'kwSource': S.kwSource = val; break;
     case 'kwFilter': S.q = val; S.tab = 'links'; break;

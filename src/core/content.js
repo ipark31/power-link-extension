@@ -285,8 +285,9 @@
 
   async function finish() {
     const d = drag;
-    drag = null;
+    drag = null; press = null;
     clearDrawing();
+    if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = 0; }
     document.documentElement.style.removeProperty('user-select');
     if (!d) return;
     const hits = computeHitsFor(d);
@@ -337,6 +338,7 @@
     if (!drag && !press) return;
     drag = null; press = null;
     clearDrawing();
+    if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = 0; }
     document.documentElement.style.removeProperty('user-select');
   }
 
@@ -351,6 +353,9 @@
   }, true);
 
   addEventListener('mousemove', (e) => {
+    // The button was released where we could not see it (outside the window, over an iframe,
+    // or another script swallowed mouseup): end the gesture instead of leaving the box on screen.
+    if ((drag || press) && e.buttons === 0) { if (drag) endDrag(); else press = null; return; }
     if (press && !drag) {
       if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) < DRAG_START) return;
       ensureOverlay();
@@ -371,20 +376,24 @@
     e.preventDefault();
   }, true);
 
+  // Do not stopPropagation here: other scripts on the page must still see the release,
+  // otherwise their own overlays (e.g. other gesture extensions) stay stuck on screen.
+  function endDrag(e) {
+    if (e) e.preventDefault();
+    suppressMenuUntil = Date.now() + 400;
+    suppressClickUntil = Date.now() + 400;
+    finish();
+  }
   addEventListener('mouseup', (e) => {
-    if (drag) {
-      e.preventDefault();
-      e.stopPropagation();
-      suppressMenuUntil = Date.now() + 400;
-      suppressClickUntil = Date.now() + 400;
-      finish();
-    } else if (press) {
-      press = null; // plain click: let the page handle it
-    }
+    if (drag) endDrag(e);
+    else if (press) press = null; // plain click: let the page handle it
   }, true);
+  addEventListener('pointerup', (e) => { if (drag && e.pointerType === 'mouse') endDrag(e); }, true);
+  addEventListener('pointercancel', () => cancel(), true);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
 
   addEventListener('contextmenu', (e) => {
-    if (drag || Date.now() < suppressMenuUntil) { e.preventDefault(); e.stopPropagation(); }
+    if (drag || Date.now() < suppressMenuUntil) e.preventDefault();
   }, true);
   addEventListener('click', (e) => {
     if (Date.now() < suppressClickUntil) { e.preventDefault(); e.stopPropagation(); suppressClickUntil = 0; }
