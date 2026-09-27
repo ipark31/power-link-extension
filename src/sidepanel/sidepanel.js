@@ -518,6 +518,26 @@ function appendMore() {
 }
 const resetLimit = () => { S.limit = PAGE; S.toTop = true; }; // new filter / sort / tab: start at the top
 
+// Replace the panel's content but keep the live search box (<label class="pl-search"> and its input)
+// in place. Returns false when the new markup has no search box with that id (e.g. another tab).
+function patchAroundSearch(html, qid) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const nf = tmp.querySelector('.pl-filters'), cf = app.querySelector('.pl-filters');
+  const ns = nf && nf.querySelector('.pl-search'), cs = cf && cf.querySelector('.pl-search');
+  if (!ns || !cs || !ns.querySelector('#' + qid) || !cs.querySelector('#' + qid) || cf.parentElement !== app || nf.parentElement !== tmp) return false;
+  const swap = (oldParent, keep, newParent, newKeep) => {
+    [...oldParent.children].forEach((c) => { if (c !== keep) c.remove(); });
+    const kids = [...newParent.children], at = kids.indexOf(newKeep);
+    kids.slice(0, at).forEach((k) => oldParent.insertBefore(k, keep));
+    let ref = keep;
+    kids.slice(at + 1).forEach((k) => { ref.after(k); ref = k; });
+  };
+  swap(cf, cs, nf, ns);   // filters row: everything except the search box
+  swap(app, cf, tmp, nf); // panel: header, list, bar
+  return true;
+}
+
 function render() {
   const active = document.activeElement;
   const refocus = active && active.id ? active.id : null;
@@ -529,7 +549,7 @@ function render() {
   const dark = currentTheme() === 'dark';
   // One header row only: Chrome already draws the panel title bar (icon · "Power Link v…" · pin · ✕)
   // above this page, so the page starts with the tabs and keeps its tool buttons on the same row.
-  app.innerHTML = `
+  const html = `
     <header class="pl-tabs-row">
       <nav class="pl-tabs" role="tablist">
         ${[['links', '수집 링크', '수집', links.length], ['recent', '최근 화면', '최근', ''], ['keywords', '키워드', '키워드', ''], ['watch', '워치리스트', '워치', watch.length]].map(([id, l, s, n]) => `<button type="button" role="tab" class="pl-tab" aria-selected="${S.tab === id}" data-act="tab" data-val="${id}" title="${l}"><span class="pl-tab__full">${l}</span><span class="pl-tab__short">${s}</span>${n !== '' ? `<span class="pl-tab__n">${n}</span>` : ''}</button>`).join('')}
@@ -542,7 +562,13 @@ function render() {
       </div>
     </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
-  if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
+  // While the search box has focus it must never be replaced: a Korean syllable being composed (IME)
+  // is committed and broken when its input element goes away ('퀄리' → 'ㅋ쿼퀄퀄ㄹ리리').
+  // Everything around it is swapped instead.
+  if (!((refocus === 'q' || refocus === 'rq') && patchAroundSearch(html, refocus))) {
+    app.innerHTML = html;
+    if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
+  }
   const sc = app.querySelector('.pl-scroll');
   if (sc && keep && keep.tab === S.tab && keep.top && !S.toTop) sc.scrollTop = keep.top;
   S.toTop = false;
