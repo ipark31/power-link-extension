@@ -19,7 +19,7 @@ await sp.setViewportSize({ width: 420, height: 700 });
 await sp.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`); await sp.bringToFront(); await wait(500);
 const others = (n) => ({ at: Date.now(), profiles: [{ id: 'p2', name: '다른 프로필', online: true, items: [{ url: 'https://other.test/a', title: '다른 프로필 화면 ' + n, at: Date.now() - 5000, open: true }] }] });
 await sp.evaluate(async (o) => {
-  await chrome.storage.local.set({ pl_recent: [{ url: 'http://localhost:8798/open', title: '열린 화면', at: Date.now() }, { url: 'https://closed.test/', title: '닫힌 화면', at: Date.now() - 60000 }], pl_recentOthers: o, pl_bridge: { connected: true, at: Date.now() } });
+  await chrome.storage.local.set({ pl_recent: [{ url: 'http://localhost:8798/open', title: '열린 화면', at: Date.now() }, { url: 'https://closed.test/', title: '닫힌 화면', at: Date.now() - 60000 }, { url: 'https://closed2.test/', title: '닫힌 화면 2', at: Date.now() - 70000 }], pl_recentOthers: o, pl_bridge: { connected: true, at: Date.now() } });
 }, others(0));
 await sp.click('[data-act="tab"][data-val="recent"]'); await wait(700);
 // the panel keeps refreshing (other profile state every ~second)
@@ -36,10 +36,17 @@ ok('마우스를 움직이지 않아도 버튼이 계속 보임(hover 유지)', 
 const cursor = await sp.evaluate((s) => { const b = document.querySelector(s).getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2 + 9, b.top + b.height / 2 - 9); return e && e.closest('[data-act]') && getComputedStyle(e).cursor; }, del);
 ok('원 안 가장자리도 손 모양', cursor === 'pointer', String(cursor));
 // press, the panel refreshes while the button is held, release → the click still counts
-await sp.mouse.down(); await wait(400); await sp.mouse.up(); await wait(700);
+await sp.mouse.down(); await wait(400); await sp.mouse.up();
+// the row goes at once, without waiting for the background's storage write
+await wait(60);
+ok('삭제 클릭 즉시 목록에서 사라짐', await sp.evaluate(() => !document.querySelector('[data-row="https://closed.test/"]')));
+await wait(700);
+const sync = await sp.evaluate(() => { document.querySelector('[data-act="rDel"][data-val="https://closed2.test/"]').click(); return !document.querySelector('[data-row="https://closed2.test/"]'); });
+ok('삭제 클릭과 동시에 행 제거(저장 대기 없음)', sync);
+await wait(700);
 clearInterval(tick); await wait(300);
 const left = await sp.evaluate(async () => ((await chrome.storage.local.get('pl_recent')).pl_recent || []).map((r) => r.url));
-ok('누르는 도중 갱신돼도 클릭이 됨(삭제됨)', !left.includes('https://closed.test/'), left.join(', ') + ` · 갱신 ${n}번`);
+ok('누르는 도중 갱신돼도 클릭이 됨(삭제됨)', !left.includes('https://closed.test/') && !left.includes('https://closed2.test/'), left.join(', ') + ` · 갱신 ${n}번`);
 
 console.log(R.join('\n'));
 await Promise.race([ctx.close(), wait(5000)]); srv.close();

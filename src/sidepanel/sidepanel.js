@@ -311,9 +311,20 @@ function otherProfiles() {
   const connected = !!(bridge && bridge.connected);
   return (recentOthers.profiles || []).map((p) => ({ id: p.id, name: p.name || '다른 프로필', online: connected && !!p.online, items: p.items || [] }));
 }
+// Deleted rows disappear at once; the stored list catches up afterwards (the background queues the
+// write behind pending recent-screen writes, another profile answers through the helper).
+// profile id ('' = this profile) | url key → hide until (ms)
+const goneRecent = new Map();
+const goneKey = (pid, url) => (pid || '') + '|' + rkey(url);
+function hideRecent(pid, url, ms = 15000) { goneRecent.set(goneKey(pid, url), Date.now() + ms); if (S.tab === 'recent') render(); }
+function isGone(pid, url) {
+  const k = goneKey(pid, url), until = goneRecent.get(k);
+  if (until && until < Date.now()) goneRecent.delete(k);
+  return !!until && until >= Date.now();
+}
 function recentMerged() {
-  const mine = recent.map((r) => ({ url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: null }));
-  const others = otherProfiles().flatMap((p) => p.items.map((r) => ({
+  const mine = recent.filter((r) => !goneRecent.size || !isGone('', r.url)).map((r) => ({ url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: null }));
+  const others = otherProfiles().flatMap((p) => p.items.filter((r) => !goneRecent.size || !isGone(p.id, r.url)).map((r) => ({
     url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, open: !!r.open, profile: { id: p.id, name: p.name, online: p.online }
   })));
   return mine.concat(others);
@@ -415,6 +426,7 @@ async function goRecentOther(url, pid, online, name) {
 // Close every tab of this profile showing that screen; the record stays in the list.
 // ✕: close every tab of this profile showing that screen and drop it from the recent list
 async function closeRecent(url) {
+  hideRecent('', url);
   const k = rkey(url);
   const ids = (await chrome.tabs.query({})).filter((t) => t.url && rkey(t.url) === k).map((t) => t.id);
   if (ids.length) await chrome.tabs.remove(ids);
@@ -768,14 +780,22 @@ app.addEventListener('click', async (e) => {
       return;
     case 'rDel':
       if (t.dataset.pid) {
-        const r = await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'forget', url: val } });
-        toast(r.ok ? (t.dataset.on === '1' ? '삭제를 요청했어요' : '오프라인 프로필이에요 — 다시 접속하면 삭제돼요') : r.message || '삭제를 요청하지 못했어요', r.ok ? 'success' : 'error');
-      } else await send({ type: 'pl:recentForget', urls: [val] });
+        const pid = t.dataset.pid, on = t.dataset.on === '1';
+        if (on) hideRecent(pid, val);
+        const r = await send({ type: 'pl:bridgeSend', target: pid, command: { type: 'forget', url: val } });
+        if (!r.ok) { goneRecent.delete(goneKey(pid, val)); render(); }
+        toast(r.ok ? (on ? '삭제를 요청했어요' : '오프라인 프로필이에요 — 다시 접속하면 삭제돼요') : r.message || '삭제를 요청하지 못했어요', r.ok ? 'success' : 'error');
+      } else {
+        hideRecent('', val);
+        await send({ type: 'pl:recentForget', urls: [val] });
+      }
       return;
     case 'rClose':
       if (t.dataset.pid) { // another profile: ask it to close its tab and forget the screen
+        hideRecent(t.dataset.pid, val);
         const c = await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'close', url: val } });
         if (c.ok) await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'forget', url: val } });
+        if (!c.ok) { goneRecent.delete(goneKey(t.dataset.pid, val)); render(); }
         toast(c.ok ? `‘${t.dataset.name || '다른 프로필'}’ 프로필의 탭을 닫고 목록에서 삭제했어요` : c.message || '닫기를 요청하지 못했어요', c.ok ? 'success' : 'error');
         return;
       }
@@ -889,7 +909,12 @@ document.addEventListener('keydown', async (e) => {
 chrome.storage.onChanged.addListener(async (ch, area) => {
   if (area === 'local' && ch[STORAGE.links]) { links = ch[STORAGE.links].newValue || []; const ids = new Set(links.map((l) => l.id)); [...S.sel].forEach((i) => ids.has(i) || S.sel.delete(i)); render(); kickEnrich(); }
   if (area === 'local' && ch[STORAGE.apiKey]) { hasKey = !!ch[STORAGE.apiKey].newValue; render(); kickEnrich(); }
-  if (area === 'local' && ch[STORAGE.recent]) { recent = ch[STORAGE.recent].newValue || []; if (S.tab === 'recent') render(); }
+  if (area === 'local' && ch[STORAGE.recent]) {
+    recent = ch[STORAGE.recent].newValue || [];
+    // a deleted screen is gone from the stored list now: stop hiding it (visiting it again brings it back)
+    if (goneRecent.size) { const have = new Set(recent.map((r) => goneKey('', r.url))); [...goneRecent.keys()].forEach((k) => k.startsWith('|') && !have.has(k) && goneRecent.delete(k)); }
+    if (S.tab === 'recent') render();
+  }
   if (area === 'local' && ch[STORAGE.recentOthers]) { recentOthers = ch[STORAGE.recentOthers].newValue || { profiles: [] }; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.bridge]) { bridge = ch[STORAGE.bridge].newValue || null; if (S.tab === 'recent') render(); }
   if (area === 'local' && ch[STORAGE.watch]) { watch = ch[STORAGE.watch].newValue || []; if (S.tab === 'watch') render(); }
