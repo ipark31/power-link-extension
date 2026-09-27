@@ -587,6 +587,20 @@ const handlers = {
 
   'pl:recentSeed': async () => { await seedRecent(); await recentChain; return { ok: true }; },
 
+  // remove screens from this profile's recent list — also from the 300ms batch waiting to be written,
+  // so a tab seen just before it was closed does not come straight back
+  'pl:recentForget': async (msg) => {
+    const keys = new Set((msg.urls || []).map(recentKey));
+    keys.forEach((k) => pendingRecent.delete(k));
+    recentChain = recentChain.then(async () => {
+      const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+      const next = list.filter((r) => !keys.has(recentKey(r.url)));
+      if (next.length !== list.length) await chrome.storage.local.set({ [STORAGE.recent]: next });
+    }).catch(() => {});
+    await recentChain;
+    return { ok: true };
+  },
+
   'pl:recentAdd': async (msg) => {
     const links = (msg.items || []).filter((i) => /^https?:/i.test(i.url)).map((i) => ({ url: i.url, title: i.title, thumb: '' }));
     if (!links.length) return { ok: false, message: '추가할 링크가 없어요' };
