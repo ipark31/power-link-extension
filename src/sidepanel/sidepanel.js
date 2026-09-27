@@ -518,24 +518,39 @@ function appendMore() {
 }
 const resetLimit = () => { S.limit = PAGE; S.toTop = true; }; // new filter / sort / tab: start at the top
 
-// Replace the panel's content but keep the live search box (<label class="pl-search"> and its input)
-// in place. Returns false when the new markup has no search box with that id (e.g. another tab).
-function patchAroundSearch(html, qid) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  const nf = tmp.querySelector('.pl-filters'), cf = app.querySelector('.pl-filters');
-  const ns = nf && nf.querySelector('.pl-search'), cs = cf && cf.querySelector('.pl-search');
-  if (!ns || !cs || !ns.querySelector('#' + qid) || !cs.querySelector('#' + qid) || cf.parentElement !== app || nf.parentElement !== tmp) return false;
-  const swap = (oldParent, keep, newParent, newKeep) => {
-    [...oldParent.children].forEach((c) => { if (c !== keep) c.remove(); });
-    const kids = [...newParent.children], at = kids.indexOf(newKeep);
-    kids.slice(0, at).forEach((k) => oldParent.insertBefore(k, keep));
-    let ref = keep;
-    kids.slice(at + 1).forEach((k) => { ref.after(k); ref = k; });
-  };
-  swap(cf, cs, nf, ns);   // filters row: everything except the search box
-  swap(app, cf, tmp, nf); // panel: header, list, bar
-  return true;
+// Update the live panel to the new markup in place instead of replacing it (innerHTML).
+// Storage and tab events re-render the panel several times a second (other profiles, titles, 'open'
+// badges); replacing the rows under the pointer dropped their hover (buttons faded, cursor reset)
+// and swallowed clicks whose press and release landed on different elements. Rows are matched by
+// data-row (or id), so an unchanged row keeps its very elements, and a row that moved is moved.
+// The focused text field is never touched: a Korean syllable being composed (IME) breaks when its
+// input changes or goes away ('퀄리' → 'ㅋ쿼퀄퀄ㄹ리리').
+const nodeKey = (n) => (n.nodeType === 1 ? (n.hasAttribute('data-row') ? n.tagName + '|r|' + n.getAttribute('data-row') : n.id ? n.tagName + '|#' + n.id : null) : null);
+function morphChildren(cur, next) {
+  const olds = [...cur.childNodes], keyed = new Map(), used = new Set();
+  for (const o of olds) { const k = nodeKey(o); if (k) { if (!keyed.has(k)) keyed.set(k, []); keyed.get(k).push(o); } }
+  let at = 0;
+  [...next.childNodes].forEach((n, i) => {
+    const k = nodeKey(n);
+    let m = null;
+    if (k) m = (keyed.get(k) || []).shift() || null;
+    else while (at < olds.length) { const o = olds[at++]; if (!used.has(o) && !nodeKey(o) && o.nodeType === n.nodeType && o.nodeName === n.nodeName) { m = o; break; } }
+    if (m) { used.add(m); morphNode(m, n); } else m = n;
+    if (cur.childNodes[i] !== m) cur.insertBefore(m, cur.childNodes[i] || null);
+  });
+  for (const o of olds) if (!used.has(o) && o.parentNode === cur) o.remove();
+}
+function morphNode(cur, next) {
+  if (cur.nodeType !== 1) { if (cur.nodeValue !== next.nodeValue) cur.nodeValue = next.nodeValue; return; }
+  const tag = cur.tagName;
+  if ((tag === 'INPUT' || tag === 'TEXTAREA') && cur === document.activeElement) return;
+  if (cur.isEqualNode(next)) return;
+  for (const a of [...cur.attributes]) if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
+  for (const a of next.attributes) if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
+  if (tag === 'INPUT') { cur.value = next.getAttribute('value') || ''; cur.checked = next.hasAttribute('checked'); return; }
+  if (tag === 'TEXTAREA') { cur.value = next.textContent; return; }
+  morphChildren(cur, next);
+  if (tag === 'SELECT') { const o = next.querySelector('option[selected]') || next.querySelector('option'); if (o) cur.value = o.value; }
 }
 
 function render() {
@@ -562,15 +577,12 @@ function render() {
       </div>
     </header>
     ${S.tab === 'links' ? renderLinks() : S.tab === 'recent' ? renderRecent() : S.tab === 'keywords' ? renderKeywords() : renderWatch()}`;
-  // While the search box has focus it must never be replaced: a Korean syllable being composed (IME)
-  // is committed and broken when its input element goes away ('퀄리' → 'ㅋ쿼퀄퀄ㄹ리리').
-  // Everything around it is swapped instead.
-  if (!((refocus === 'q' || refocus === 'rq') && patchAroundSearch(html, refocus))) {
-    app.innerHTML = html;
-    if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
-  }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  morphChildren(app, tmp);
+  if (refocus === 'q' || refocus === 'rq') { const el = app.querySelector('#' + refocus); if (el && el !== document.activeElement) { el.focus(); if (selStart != null) el.setSelectionRange(selStart, selStart); } }
   const sc = app.querySelector('.pl-scroll');
-  if (sc && keep && keep.tab === S.tab && keep.top && !S.toTop) sc.scrollTop = keep.top;
+  if (sc) sc.scrollTop = keep && keep.tab === S.tab && !S.toTop ? keep.top : 0;
   S.toTop = false;
   if (S.focusRow && refocus !== 'q' && refocus !== 'rq' && (document.activeElement === document.body || !document.activeElement)) {
     const el = [...app.querySelectorAll('[data-row]')].find((r) => r.dataset.row === S.focusRow);

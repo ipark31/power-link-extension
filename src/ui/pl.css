@@ -149,8 +149,9 @@ html, body { margin: 0; background: var(--pl-bg); }
 .pl-ibtn {
   width: 30px; height: 30px; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%;
   background: none; color: var(--pl-text2); display: inline-grid; place-items: center;
-  transition: background .15s;
+  transition: background .15s; cursor: pointer;
 }
+.pl-ibtn > * { pointer-events: none; } /* the whole circle is the target, never the glyph inside */
 .pl-ibtn:hover, .pl-ibtn.is-on { background: var(--pl-chip); color: var(--pl-text); }
 .pl-ibtn--xs { width: 24px; height: 24px; }
 .pl-ibtn--sm { width: 28px; height: 28px; }
