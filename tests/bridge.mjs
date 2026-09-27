@@ -132,6 +132,15 @@ try {
   const alphaIn = (sw) => sw.evaluate(async () => (await chrome.tabs.query({ url: 'http://localhost:8773/alpha' })).length);
   ok('중복 링크 닫기: 현재 프로필 우선, 다른 프로필 탭 닫힘', await until(async () => (await alphaIn(swB)) === 0 && (await alphaIn(swA)) === 1), `A ${await alphaIn(swA)}개 / B ${await alphaIn(swB)}개`);
 
+  // 7-2) another profile's open tab: B sees ● 열림 and ✕ for A's omega; ✕ closes it in A and drops it from A's list
+  const pA3 = await A.newPage(); await pA3.goto('http://localhost:8773/omega'); await pA3.bringToFront(); await wait(400);
+  await spB.bringToFront();
+  const closeSel = '[data-act="rClose"][data-val="http://localhost:8773/omega"][data-pid]';
+  ok('다른 프로필의 열린 탭에 ✕ 표시', await until(async () => (await spB.locator(closeSel).count()) === 1, 8000));
+  await spB.hover('[data-act="rGo"][data-val="http://localhost:8773/omega"]'); await spB.click(closeSel);
+  const omegaA = () => swA.evaluate(async () => ({ tabs: (await chrome.tabs.query({ url: 'http://localhost:8773/omega' })).length, listed: ((await chrome.storage.local.get('pl_recent')).pl_recent || []).some((r) => r.url.endsWith('/omega')) }));
+  ok('✕ → 그 프로필에서 탭 닫고 목록에서 삭제', await until(async () => { const o = await omegaA(); return o.tabs === 0 && !o.listed; }, 8000), JSON.stringify(await omegaA()));
+
   // 8) 오프라인: A 종료 → 회색(is-offline) 표시, 클릭하면 현재 프로필에서 새 탭
   await A.close(); A = null;
   ok('오프라인 표시', await until(async () => (await spB.locator('.pl-recent.is-offline').count()) >= 1, 15000));

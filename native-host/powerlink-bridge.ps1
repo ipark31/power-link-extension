@@ -62,7 +62,9 @@ function Get-CleanItems($raw) {
     try { $at = [long]$it.at } catch { $at = 0L }
     $fav = [string]$it.favIconUrl
     if ($fav -notmatch '^(https?:|data:image/)' -or $fav.Length -gt 2048) { $fav = '' }
-    [void]$out.Add(@{ url = $url; title = $title; at = $at; favIconUrl = $fav })
+    $open = $false
+    try { $open = [bool]$it.open } catch { $open = $false }
+    [void]$out.Add(@{ url = $url; title = $title; at = $at; favIconUrl = $fav; open = $open })
   }
   return ,$out.ToArray()
 }

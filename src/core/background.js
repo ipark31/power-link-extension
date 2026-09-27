@@ -128,9 +128,12 @@ async function bridgeSendRecent() {
   if (!bridgePort) return;
   const { id, name } = await bridgeIdentity();
   const list = (await chrome.storage.local.get(STORAGE.recent))[STORAGE.recent] || [];
+  // tell the other profiles which screens are open here right now (they show ● 열림 and ✕ for them)
+  const openKeys = new Set((await chrome.tabs.query({})).filter((t) => t.url).map((t) => recentKey(t.url)));
   const items = list.slice(0, BRIDGE_ITEM_MAX).map((r) => ({
     url: r.url, title: r.title || '', at: r.at || 0,
-    favIconUrl: (r.favIconUrl || '').length <= 2048 ? r.favIconUrl || '' : ''
+    favIconUrl: (r.favIconUrl || '').length <= 2048 ? r.favIconUrl || '' : '',
+    open: openKeys.has(recentKey(r.url))
   }));
   try { bridgePort.postMessage({ type: 'recent', profileId: id, name, items }); } catch (e) { /* just disconnected */ }
 }
@@ -202,6 +205,10 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== 'local') return;
   if (ch[STORAGE.recent] || ch[STORAGE.profileName]) bridgeQueueRecent();
 });
+// open / closed state changes also go out (1s debounce), only while the helper is connected
+chrome.tabs.onCreated.addListener(() => { if (bridgePort) bridgeQueueRecent(); });
+chrome.tabs.onRemoved.addListener(() => { if (bridgePort) bridgeQueueRecent(); });
+chrome.tabs.onUpdated.addListener((id, info) => { if (bridgePort && info.url) bridgeQueueRecent(); });
 
 // ------------------------------------------------------------------ helpers
 function toItem(raw, source, extra) {

@@ -314,7 +314,7 @@ function otherProfiles() {
 function recentMerged() {
   const mine = recent.map((r) => ({ url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: null }));
   const others = otherProfiles().flatMap((p) => p.items.map((r) => ({
-    url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, profile: { id: p.id, name: p.name, online: p.online }
+    url: r.url, title: r.title, at: r.at || 0, favIconUrl: r.favIconUrl, open: !!r.open, profile: { id: p.id, name: p.name, online: p.online }
   })));
   return mine.concat(others);
 }
@@ -328,7 +328,8 @@ function recentFiltered() {
 }
 function recentRow(r, saved) {
   const p = r.profile;
-  const isOpen = !p && openTabs.has(rkey(r.url));
+  // other profiles report their open tabs (only trusted while that profile is online)
+  const isOpen = p ? p.online && r.open : openTabs.has(rkey(r.url));
   const isSaved = saved.has(rkey(r.url));
   const vid = ytVideoId(r.url);
   const media = vid ? `<img class="pl-recent__thumb${/\/shorts\//.test(r.url) ? ' pl-recent__thumb--short' : ''}" src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="" loading="lazy" decoding="async">`
@@ -347,7 +348,7 @@ function recentRow(r, saved) {
     </button>
     ${p ? `<span class="pl-ptag" title="${p.online ? '온라인' : '오프라인'} 프로필">${icon('person', 'pl-i--xs')}<span>${esc(p.name)}</span></span>` : ''}
     <div class="pl-recent__acts">
-      ${isOpen ? `<button type="button" class="pl-ibtn" data-act="rClose" data-val="${esc(r.url)}" aria-label="탭 닫고 목록에서 삭제" title="탭 닫고 목록에서 삭제">${icon('close', 'pl-i--md')}</button>` : ''}
+      ${isOpen ? `<button type="button" class="pl-ibtn" data-act="rClose" data-val="${esc(r.url)}"${pAttrs} aria-label="탭 닫고 목록에서 삭제" title="${p ? `‘${esc(p.name)}’ 프로필의 탭 닫고 목록에서 삭제` : '탭 닫고 목록에서 삭제'}">${icon('close', 'pl-i--md')}</button>` : ''}
       <button type="button" class="pl-ibtn" data-act="rAdd" data-val="${esc(r.url)}" aria-label="수집 링크에 추가" title="${isSaved ? '이미 수집 링크에 있어요' : '수집 링크에 추가'}" ${isSaved ? 'disabled' : ''}>${icon(isSaved ? 'check' : 'plus', 'pl-i--md')}</button>
       <button type="button" class="pl-ibtn" data-act="rDel" data-val="${esc(r.url)}"${pAttrs} aria-label="목록에서 삭제" title="${p ? '그 프로필의 목록에서 삭제' : '목록에서 삭제'}">${icon('trash', 'pl-i--md')}</button>
     </div>
@@ -733,7 +734,14 @@ app.addEventListener('click', async (e) => {
         toast(r.ok ? (t.dataset.on === '1' ? '삭제를 요청했어요' : '오프라인 프로필이에요 — 다시 접속하면 삭제돼요') : r.message || '삭제를 요청하지 못했어요', r.ok ? 'success' : 'error');
       } else await send({ type: 'pl:recentForget', urls: [val] });
       return;
-    case 'rClose': await closeRecent(val); await refreshOpenTabs(); break;
+    case 'rClose':
+      if (t.dataset.pid) { // another profile: ask it to close its tab and forget the screen
+        const c = await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'close', url: val } });
+        if (c.ok) await send({ type: 'pl:bridgeSend', target: t.dataset.pid, command: { type: 'forget', url: val } });
+        toast(c.ok ? `‘${t.dataset.name || '다른 프로필'}’ 프로필의 탭을 닫고 목록에서 삭제했어요` : c.message || '닫기를 요청하지 못했어요', c.ok ? 'success' : 'error');
+        return;
+      }
+      await closeRecent(val); await refreshOpenTabs(); break;
     case 'rDedupe':
       if (!(await confirmModal({ title: '중복 링크 닫기', message: '중복된 링크를 닫고 1개만 남깁니다.\n이 프로필에 열린 탭을 우선으로 남기고 나머지는 닫아요.', ok: '예', cancel: '아니요' }))) return;
       await closeDuplicates(); break;
