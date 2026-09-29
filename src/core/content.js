@@ -85,13 +85,22 @@
     .dlp-h .x { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
     .dlp-h .x:hover { background: #272727; color: #F1F1F1; }
     .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
-    .dlp-list { flex: 1; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
-    .dlp-row { display: grid; grid-template-columns: 18px 56px 1fr; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+    .dlp-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .dlp-row { display: grid; grid-template-columns: 18px 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+    .dlp-row > .dlp-b { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .dlp-row.lock { cursor: default; }
+    .dlp-row input:disabled { cursor: default; opacity: .55; }
+    .dlp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .dlp-pb { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: #2A2A2A; overflow: hidden; }
+    .dlp-pb span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
+    .dlp-pb.ok span { background: #4ADE80; } .dlp-pb.err span { background: #F87171; } .dlp-pb.stop span { background: #FBBF24; }
+    .dlp-pb.idle { visibility: hidden; }
     .dlp-row:hover { background: #1A1A1A; }
     .dlp-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--tone, #C83F55); cursor: pointer; }
     .dlp-th { width: 56px; height: 32px; border-radius: 6px; background: #272727 center/cover no-repeat; flex-shrink: 0; }
     .dlp-t { font-size: 12px; line-height: 1.35; max-height: 2.7em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .dlp-m { font-size: 11px; color: #AAAAAA; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-m { font-size: 11px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
+    .dlp-m.host { flex-shrink: 1; min-width: 0; }
     .dlp-m.ok { color: #4ADE80; } .dlp-m.err { color: #F87171; } .dlp-m.run { color: #F1F1F1; }
     .dlp-f { padding: 10px 12px 12px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 8px; }
     .dlp-where { font-size: 11px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -99,7 +108,7 @@
     .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
     .dlp-bar.on { display: block; }
     .dlp-acts { display: flex; gap: 8px; align-items: center; }
-    .dlp-acts .n { font-size: 12px; color: #AAAAAA; flex: 1; }
+    .dlp-acts .n { font-size: 12px; color: #AAAAAA; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button:disabled { opacity: .45; cursor: default; }
     button.stop { background: #7F1D1D; color: #FEE2E2; }
     button.stop:hover { background: #991B1B; }
@@ -703,12 +712,13 @@
     toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
   }
   // ---------------------------------------------------------------- 다운로드 목록창
-  // 우클릭 드래그로 고른 영상을 보여 준다.
-  //   [다운로드 N개]   체크한 새 항목을 서버로 보낸다
-  //   [선택 삭제]      체크한 항목을 목록에서 뺀다. 받는 중이면 먼저 중지한다 (서버의 받던 파일도 삭제)
-  //   [다운로드 중지]  받는 중/대기 중인 항목을 모두 중지한다 (서버의 받던 파일도 삭제)
+  // 우클릭 드래그로 고른 영상을 보여 준다. 체크한 것만 받는다.
+  //   받기 전  : 체크박스로 고르고 [다운로드 N개] / [선택 삭제]
+  //   받는 중  : [다운로드 중지] 만 누를 수 있다. 체크박스(체크된 상태 유지)와 다른 버튼은 잠긴다
+  //   끝난 뒤  : 다시 체크박스와 [선택 삭제] 를 쓸 수 있다
+  // 파일별 진행률은 막대 하나(영상+음성 합산 비율)로 보여 준다.
   // 창은 한 개만 두고, 새로 드래그하면 목록에 이어 붙는다. 진행률은 2초마다 갱신.
-  let dlp = null; // { el, items: Map(key → item), timer, tone, toasted:Set }  item = { link, row, taskId, batchId, status, progress }
+  let dlp = null; // { el, items: Map(key → item), timer, tone, toasted:Set, sending }  item = { link, row, taskId, batchId, status, progress }
   const escH = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const MODE_LABEL = { both: '영상+음성', video: '영상만', audio: '음성만' };
   const DL_DONE = { completed: 1, error: 1, failed: 1, cancelled: 1 };
@@ -729,18 +739,32 @@
   function dlRow(link) {
     const row = document.createElement('label');
     row.className = 'dlp-row';
-    row.innerHTML = `<input type="checkbox" checked><span class="dlp-th" style="${link.thumb ? `background-image:url(&quot;${escH(link.thumb)}&quot;)` : ''}"></span><span><div class="dlp-t">${escH(link.title || link.url)}</div><div class="dlp-m">${escH((link.domain || '').replace(/^www\./, ''))}</div></span>`;
+    row.innerHTML = `<input type="checkbox" checked><span class="dlp-th" style="${link.thumb ? `background-image:url(&quot;${escH(link.thumb)}&quot;)` : ''}"></span><span class="dlp-b"><div class="dlp-t">${escH(link.title || link.url)}</div><div class="dlp-line"><div class="dlp-pb idle"><span></span></div><div class="dlp-m host">${escH((link.domain || '').replace(/^www\./, ''))}</div></div></span>`;
     return row;
   }
   const dlChecked = (it) => it.row.querySelector('input').checked;
 
-  // 버튼·요약·진행 막대를 현재 상태에 맞게 다시 그린다
+  // 한 행의 진행 막대와 상태 글자. 진행률은 서버가 준 합산 값 하나만 쓴다 (영상/음성을 따로 보여 주지 않는다)
+  function dlPaint(it, s) {
+    const bar = it.row.querySelector('.dlp-pb'), fill = bar.querySelector('span'), m = it.row.querySelector('.dlp-m');
+    const pct = Math.max(0, Math.min(100, Math.round(s.progress || 0)));
+    m.removeAttribute('title');
+    if (s.status === 'completed') { bar.className = 'dlp-pb ok'; fill.style.width = '100%'; m.className = 'dlp-m ok'; m.textContent = '완료'; }
+    else if (s.status === 'error' || s.status === 'failed') { bar.className = 'dlp-pb err'; fill.style.width = '100%'; m.className = 'dlp-m err'; m.textContent = '실패'; m.title = s.error || ''; it.row.title = s.error || ''; }
+    else if (s.status === 'cancelled') { bar.className = 'dlp-pb stop'; fill.style.width = pct + '%'; m.className = 'dlp-m stop'; m.textContent = '중지됨'; }
+    else if (s.status === 'processing') { bar.className = 'dlp-pb'; fill.style.width = '100%'; m.className = 'dlp-m run'; m.textContent = '합치는 중'; }
+    else if (s.status === 'downloading') { bar.className = 'dlp-pb'; fill.style.width = pct + '%'; m.className = 'dlp-m run'; m.textContent = pct + '%'; }
+    else { bar.className = 'dlp-pb'; fill.style.width = '0%'; m.className = 'dlp-m'; m.textContent = '대기'; }
+  }
+
+  // 버튼·요약·진행 막대·잠금 상태를 현재 상태에 맞게 다시 그린다
   function dlRefresh() {
     if (!dlp) return;
     const all = [...dlp.items.values()];
     const fresh = all.filter((it) => !dlSent(it));
     const sent = all.filter(dlSent);
     const running = sent.filter(dlRunning);
+    const busy = running.length > 0 || dlp.sending;   // 받는 중: [다운로드 중지] 만 쓸 수 있다
     const checked = all.filter(dlChecked);
     const toSend = fresh.filter(dlChecked);
     const q = (sel) => dlp.el.querySelector(sel);
@@ -753,21 +777,27 @@
       q('.dlp-bar span').style.width = Math.min(100, pct) + '%';
       const tail = (failed ? ` · 실패 ${failed}` : '') + (n('cancelled') ? ` · 중지 ${n('cancelled')}` : '');
       line = running.length ? `다운로드 중 ${pct}% · 완료 ${n('completed')}/${sent.length}${tail}` : `완료 · 성공 ${n('completed')}개${tail}`;
-      if (fresh.length) line += ` · 새 항목 ${fresh.length}`;
+      if (fresh.length && !busy) line += ` · 새 항목 ${toSend.length}개 선택`;
     } else {
       line = `${all.length}개 중 ${toSend.length}개 선택`;
     }
     q('.dlp-acts .n').textContent = line;
     q('.dlp-bar').classList.toggle('on', sent.length > 0);
 
+    // 받는 동안 체크박스는 체크된 상태 그대로 잠근다
+    for (const it of all) {
+      it.row.querySelector('input').disabled = busy;
+      it.row.classList.toggle('lock', busy);
+    }
     const go = q('button.pri'), del = q('button.del'), stop = q('button.stop'), cfg = q('button.cfg');
-    go.style.display = fresh.length ? '' : 'none';
-    go.textContent = `${sent.length ? '추가 ' : ''}다운로드 ${toSend.length}개`;
-    go.disabled = !toSend.length || dlp.sending;
+    go.style.display = fresh.length && !running.length ? '' : 'none';
+    go.textContent = dlp.sending ? '보내는 중…' : `다운로드 ${toSend.length}개`;
+    go.disabled = busy || !toSend.length;
     stop.style.display = running.length ? '' : 'none';
-    del.disabled = !checked.length;
-    del.textContent = checked.length ? `선택 삭제 ${checked.length}` : '선택 삭제';
-    cfg.style.display = sent.length ? 'none' : '';
+    stop.disabled = dlp.stopping === true;
+    del.disabled = busy || !checked.length;
+    del.textContent = !busy && checked.length ? `선택 삭제 ${checked.length}` : '선택 삭제';
+    cfg.disabled = busy;
   }
 
   function openDlPanel(links, tone) {
@@ -779,7 +809,7 @@
       el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
         <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
-          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요. 받는 중이면 중지하고 서버의 받던 파일도 지워요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></div></div>`;
+          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></div></div>`;
       el.querySelector('.x').addEventListener('click', closeDlPanel);
       el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
       el.querySelector('.pri').addEventListener('click', startDl);
@@ -789,7 +819,7 @@
       el.addEventListener('mousedown', (e) => e.stopPropagation(), true); // 창 안에서 드래그가 시작되지 않게
       el.addEventListener('contextmenu', (e) => e.stopPropagation(), true);
       toastWrap.parentNode.appendChild(el);
-      dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false };
+      dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false, stopping: false };
     }
     const list = dlp.el.querySelector('.dlp-list');
     for (const l of links) {
@@ -803,10 +833,10 @@
 
   async function startDl() {
     if (!dlp || dlp.sending) return;
+    // 체크한 것만 받는다. 체크는 그대로 둔다 (받는 동안 잠금)
     const picked = [...dlp.items.values()].filter((it) => !dlSent(it) && dlChecked(it));
     if (!picked.length) return;
     dlp.sending = true; dlRefresh();
-    dlp.el.querySelector('button.pri').textContent = '보내는 중…';
     const r = await send({ type: 'pl:dlBatch', urls: picked.map((it) => it.link.url), referer: location.href });
     if (!dlp) return;
     dlp.sending = false;
@@ -815,8 +845,7 @@
       toast({ tone: '#F04438', error: true, title: (r && r.message) || '다운로드를 시작하지 못했어요', sub: '설정 › 영상 다운로드에서 서버 주소를 확인하세요', actions: [{ label: '설정 열기', run: () => send({ type: 'pl:openOptions' }) }] });
       return;
     }
-    // 보낸 항목은 체크를 풀어 둔다: 이후의 체크는 "삭제할 항목 고르기"
-    for (const it of picked) { it.batchId = r.batch.batch_id; it.row.querySelector('input').checked = false; }
+    for (const it of picked) it.batchId = r.batch.batch_id;
     dlApply(r.batch);
     clearTimeout(dlp.timer);
     dlp.timer = setTimeout(dlPoll, 1500);
@@ -829,13 +858,7 @@
       const it = dlp.items.get(keyOf(s.url));
       if (!it) continue;
       it.taskId = s.task_id; it.batchId = b.batch_id; it.status = s.status; it.progress = s.progress || 0;
-      const m = it.row.querySelector('.dlp-m');
-      if (s.status === 'completed') { m.className = 'dlp-m ok'; m.textContent = '완료' + (s.file_path ? ' · ' + s.file_path.split(/[\\/]/).pop() : ''); }
-      else if (s.status === 'error' || s.status === 'failed') { m.className = 'dlp-m err'; m.textContent = '실패 · ' + (s.error || ''); m.title = s.error || ''; }
-      else if (s.status === 'cancelled') { m.className = 'dlp-m stop'; m.textContent = '중지됨 · 받던 파일 삭제'; }
-      else if (s.status === 'processing') { m.className = 'dlp-m run'; m.textContent = '영상과 음성을 합치는 중…'; }
-      else if (s.status === 'downloading') { m.className = 'dlp-m run'; m.textContent = `${Math.round(s.progress || 0)}%` + (s.status_msg ? ' · ' + s.status_msg : ''); }
-      else { m.className = 'dlp-m'; m.textContent = '대기 중'; }
+      dlPaint(it, s);
     }
     dlFetchDone(b);
     dlRefresh();
@@ -873,21 +896,19 @@
   }
 
   async function stopAll() {
-    if (!dlp) return;
+    if (!dlp || dlp.stopping) return;
     const running = [...dlp.items.values()].filter(dlRunning);
     if (!running.length) return;
-    dlp.el.querySelector('button.stop').disabled = true;
+    dlp.stopping = true; dlRefresh();
     await dlCancel(running);
-    if (dlp) { dlp.el.querySelector('button.stop').disabled = false; dlRefresh(); }
+    if (dlp) { dlp.stopping = false; dlRefresh(); }
   }
 
-  async function deleteChecked() {
-    if (!dlp) return;
+  // 받는 중에는 잠겨 있어 호출되지 않는다. 받기 전이나 끝난 뒤에 체크한 항목을 목록에서 뺀다
+  function deleteChecked() {
+    if (!dlp || [...dlp.items.values()].some(dlRunning)) return;
     const picked = [...dlp.items.entries()].filter(([, it]) => dlChecked(it));
     if (!picked.length) return;
-    const running = picked.map(([, it]) => it).filter(dlRunning);
-    if (running.length) await dlCancel(running);   // 받는 중이면 먼저 중지 (서버가 받던 파일을 지운다)
-    if (!dlp) return;
     for (const [k, it] of picked) { it.row.remove(); dlp.items.delete(k); }
     unmarkUrls(new Set(picked.map(([k]) => k)));   // 페이지의 선택 테두리도 지운다
     if (!dlp.items.size) { closeDlPanel(); return; }
