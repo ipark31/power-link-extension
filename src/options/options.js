@@ -221,14 +221,19 @@ function viewDownload() {
       <label class="pl-search pl-grow" style="border-radius:8px;">${icon('link')}
         <input type="text" id="dlServer" value="${esc(dl.server || '')}" placeholder="http://localhost:8000/api" aria-label="다운로더 서버 주소" autocomplete="off" spellcheck="false">
       </label>
+      <label class="pl-search" style="border-radius:8px;width:260px;">${icon('key')}
+        <input type="password" id="dlKey" value="${esc(dl.apiKey || '')}" placeholder="API 키 (원격 서버)" aria-label="API 키" autocomplete="off" spellcheck="false">
+      </label>
       <button type="button" class="pl-btn pl-btn--lg" id="dlTest">연결 확인</button>
     </div>
+    <span class="pl-caption">원격(클라우드) 서버는 API 키(서버의 UD_API_KEY)가 필요해요. 이 PC 에서 돌리는 서버(localhost)는 비워 두면 돼요.</span>
   </section>
   <section class="pl-card">
     ${row('저장 폴더', '받은 파일을 넣을 폴더(절대경로)예요. 비우면 서버의 기본 다운로드 폴더에 저장돼요. 서버가 이 PC에서 돌 때만 의미가 있어요.', `<input type="text" class="pl-input" id="dlSaveDir" value="${esc(dl.saveDir || '')}" placeholder="예: D:\\Videos\\PowerLink" spellcheck="false" style="width:260px;">`)}
     ${row('받을 트랙', '영상+음성이 기본이에요. 음성만 고르면 m4a/mp3 로 받아요.', selectBox('id="dlMode"', [['both', '영상 + 음성'], ['video', '영상만'], ['audio', '음성만']], dl.mode || 'both', '받을 트랙', 130))}
     ${row('최대 화질', '이 해상도 이하에서 가장 좋은 화질을 골라요.', selectBox('id="dlQuality"', [['', '최고 화질'], ['2160', '2160p (4K)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], String(dl.quality || ''), '최대 화질', 130))}
     ${row('동시 다운로드', '한 번에 몇 개씩 받을지 정해요. 많으면 빨라지지만 사이트가 차단할 수 있어요.', selectBox('id="dlConc"', [1, 2, 3, 4].map((n) => [String(n), n + '개']), String(dl.concurrency || 2), '동시 다운로드', 110))}
+    ${row('완료 파일 내 PC 로 가져오기', '서버가 다 받으면 크롬 다운로드 폴더의 PowerLink/ 에 저장하고 서버 사본은 지워요. ‘자동’은 서버가 이 PC(localhost)가 아닐 때만 가져와요.', selectBox('id="dlFetch"', [['auto', '자동 (원격 서버일 때)'], ['on', '항상'], ['off', '안 함']], dl.fetch || 'auto', '완료 파일 가져오기', 180))}
   </section>
   <section class="pl-card pl-card--pad">
     <div class="pl-h2">사용 방법</div>
@@ -380,8 +385,9 @@ app.addEventListener('click', async (e) => {
   }
   if (t.id === 'dlTest') {
     const server = (document.getElementById('dlServer') || {}).value;
+    const apiKey = (document.getElementById('dlKey') || {}).value;
     dlStatus = { ok: false, message: '확인 중…' }; render();
-    dlStatus = await send({ type: 'pl:dlHealth', server }); render(); return;
+    dlStatus = await send({ type: 'pl:dlHealth', server, apiKey }); render(); return;
   }
   if (t.id === 'bridgeRetry') {
     await send({ type: 'pl:bridgeReconnect' });
@@ -416,6 +422,8 @@ app.addEventListener('change', async (e) => {
   if (t.id === 'confirmOver') return save({ confirmOver: +t.value });
   if (t.id === 'dlServer') { dlStatus = null; return save({ dl: Object.assign({}, settings.dl, { server: t.value.trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.dl.server }) }); }
   if (t.id === 'dlSaveDir') return save({ dl: Object.assign({}, settings.dl, { saveDir: t.value.trim() }) });
+  if (t.id === 'dlKey') { dlStatus = null; return save({ dl: Object.assign({}, settings.dl, { apiKey: t.value.trim() }) }); }
+  if (t.id === 'dlFetch') return save({ dl: Object.assign({}, settings.dl, { fetch: t.value }) });
   if (t.id === 'dlMode') return save({ dl: Object.assign({}, settings.dl, { mode: t.value }) });
   if (t.id === 'dlQuality') return save({ dl: Object.assign({}, settings.dl, { quality: t.value }) });
   if (t.id === 'dlConc') return save({ dl: Object.assign({}, settings.dl, { concurrency: +t.value }) });

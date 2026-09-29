@@ -626,8 +626,19 @@ function dlStrip() {
   </div>`;
 }
 
+const dlFetched = new Set(); // 이미 내 PC 로 가져온 task_id
+async function dlFetchDone(batch) {
+  const r = await send({ type: 'pl:dlShouldFetch' });
+  if (!r || !r.fetch) return;
+  for (const it of batch.items || []) {
+    if (it.status !== 'completed' || dlFetched.has(it.task_id)) continue;
+    dlFetched.add(it.task_id);
+    send({ type: 'pl:dlFetchFile', taskId: it.task_id, filename: (it.file_path || '').split(/[\\/]/).pop() });
+  }
+}
 function dlPatch(batch) {
   dlJob = batch; render();
+  dlFetchDone(batch);
   if (batch.status === 'done') {
     clearTimeout(dlTimer); dlTimer = 0;
     const c = batch.counts || {};

@@ -92,6 +92,8 @@ export const DEFAULT_SETTINGS = {
   // 영상 다운로더(universal-downloader 서버) 연동 — 수집한 링크를 골라 한 번에 내려받기
   dl: {
     server: 'http://localhost:8000/api', // 다운로더 서버 API 주소 (클라우드 서버로 옮기면 여기만 바꿈)
+    apiKey: '',                          // 서버의 UD_API_KEY (원격 서버일 때). chrome.storage.sync 에 저장됨
+    fetch: 'auto',                       // 완료 파일을 내 PC 다운로드 폴더로 가져오기: auto(원격 서버일 때만) | on | off
     saveDir: '',                         // 저장 폴더(절대경로). 비우면 서버 기본 폴더. 서버가 같은 PC 일 때만 의미 있음
     mode: 'both',                        // both(영상+음성) | video | audio
     quality: '',                         // '' = 최고 화질, 또는 2160/1440/1080/720/480

@@ -752,8 +752,19 @@
     if (r && r.ok) { dlp.job = r.batch; dlRender(r.batch); }
     if (dlp.job.status !== 'done') dlp.timer = setTimeout(dlPoll, 2000);
   }
+  const dlFetched = new Set();
+  async function dlFetchDone(b) {
+    const r = await send({ type: 'pl:dlShouldFetch' });
+    if (!r || !r.fetch) return;
+    for (const it of b.items || []) {
+      if (it.status !== 'completed' || dlFetched.has(it.task_id)) continue;
+      dlFetched.add(it.task_id);
+      send({ type: 'pl:dlFetchFile', taskId: it.task_id, filename: (it.file_path || '').split(/[\\/]/).pop() });
+    }
+  }
   function dlRender(b) {
     if (!dlp) return;
+    dlFetchDone(b);
     const c = b.counts || {};
     dlp.el.querySelector('.dlp-bar span').style.width = Math.min(100, Math.round(b.progress || 0)) + '%';
     const done = b.status === 'done';
