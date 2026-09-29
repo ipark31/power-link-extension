@@ -2,6 +2,13 @@
 
 버전 규칙: `MAJOR.MINOR.PATCH` (manifest.json의 `version`과 git 태그 `v<버전>`을 항상 맞춥니다)
 
+## [2.9.0] - 2026-09-30
+
+### 변경
+- **Universal Downloader 설치 프로그램에 포함**: `UniversalDownloader-Setup-1.8.0.exe` 가 서버, Universal Downloader 확장과 함께 이 확장을 설치함
+  (`%LOCALAPPDATA%\UniversalDownloader\power-link`). 설치 안내가 크롬 등록 방법과 YouTube API 키 발급·입력 방법을 안내
+- 기능 변경 없음 (2.8.0 과 동일). 설치 프로그램 배포에 맞춘 버전
+
 ## [2.8.0] - 2026-09-29
 
 ### 추가
