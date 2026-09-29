@@ -564,7 +564,15 @@ async function dlBase(s) {
 const dlKey = (s) => String((s && s.dl && s.dl.apiKey) || '').trim();
 const isLocalServer = (base) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(base);
 // 완료 파일을 내 PC 로 가져올지: auto = 서버가 이 PC(localhost)가 아닐 때
-const shouldFetch = async (s) => { const f = (s.dl && s.dl.fetch) || 'auto'; return f === 'on' || (f === 'auto' && !isLocalServer(await dlBase(s))); };
+// 자동(auto): 서버가 다른 PC 이거나, 저장 폴더를 정하지 않았으면 가져온다.
+// 저장 폴더를 정했으면 서버가 그 폴더에 직접 넣으므로 가져오지 않는다 (같은 파일이 두 번 생기지 않게)
+const shouldFetch = async (s) => {
+  const f = (s.dl && s.dl.fetch) || 'auto';
+  if (f === 'on') return true;
+  if (f === 'off') return false;
+  const hasDir = !!String((s.dl && s.dl.saveDir) || '').trim();
+  return !hasDir || !isLocalServer(await dlBase(s));
+};
 // 브라우저가 직접 여는 URL (chrome.downloads) — 키는 ?key= 로
 const dlFileUrl = async (s, taskId) => `${await dlBase(s)}/download_file/${encodeURIComponent(taskId)}?cleanup=1${dlKey(s) ? '&key=' + encodeURIComponent(dlKey(s)) : ''}`;
 async function dlFetch(path, init) {
@@ -611,7 +619,10 @@ const handlers = {
   'pl:dlFetchFile': async (msg) => {
     const s = await getSettings();
     if (!msg.taskId) return { ok: false };
-    const name = String(msg.filename || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+    // 서버 파일명 앞의 날짜·시각·작업번호(예: 20260930_032342_f2b51df7_)는 저장할 때 뗀다
+    const name = String(msg.filename || '')
+      .replace(/^\d{8}_\d{6}_[0-9a-f]{8}_/, '').replace(/^\d{8}_/, '')
+      .replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
     const sub = 'PowerLink/';
     const fileUrl = await dlFileUrl(s, msg.taskId);
     const id = await new Promise((resolve) => chrome.downloads.download({ url: fileUrl, filename: name ? sub + name : undefined, conflictAction: 'uniquify' }, (i) => resolve(chrome.runtime.lastError ? null : i)));

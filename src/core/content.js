@@ -716,7 +716,9 @@
   const dlRunning = (it) => dlSent(it) && !DL_DONE[it.status];
   function dlWhere() {
     const dl = settings.dl || {};
-    return `저장 위치: ${dl.saveDir || '서버 기본 폴더'} · ${MODE_LABEL[dl.mode] || '영상+음성'}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`;
+    // 저장 폴더를 정하지 않았으면 다 받은 뒤 크롬 다운로드 폴더의 PowerLink 로 가져온다 (가져오기를 끈 경우만 서버 폴더에 남음)
+    const where = dl.saveDir || (dl.fetch === 'off' ? '서버 폴더' : '다운로드 폴더 › PowerLink');
+    return `저장 위치: ${where} · ${MODE_LABEL[dl.mode] || '영상+음성'}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`;
   }
   function closeDlPanel() {
     if (!dlp) return;
@@ -831,7 +833,8 @@
       if (s.status === 'completed') { m.className = 'dlp-m ok'; m.textContent = '완료' + (s.file_path ? ' · ' + s.file_path.split(/[\\/]/).pop() : ''); }
       else if (s.status === 'error' || s.status === 'failed') { m.className = 'dlp-m err'; m.textContent = '실패 · ' + (s.error || ''); m.title = s.error || ''; }
       else if (s.status === 'cancelled') { m.className = 'dlp-m stop'; m.textContent = '중지됨 · 받던 파일 삭제'; }
-      else if (s.status === 'downloading' || s.status === 'processing') { m.className = 'dlp-m run'; m.textContent = `${Math.round(s.progress || 0)}%` + (s.status_msg ? ' · ' + s.status_msg : ''); }
+      else if (s.status === 'processing') { m.className = 'dlp-m run'; m.textContent = '영상과 음성을 합치는 중…'; }
+      else if (s.status === 'downloading') { m.className = 'dlp-m run'; m.textContent = `${Math.round(s.progress || 0)}%` + (s.status_msg ? ' · ' + s.status_msg : ''); }
       else { m.className = 'dlp-m'; m.textContent = '대기 중'; }
     }
     dlFetchDone(b);
@@ -841,7 +844,8 @@
       const c = b.counts || {};
       const bad = (c.error || 0), stopped = (c.cancelled || 0);
       const title = bad ? `다운로드 끝 · 성공 ${c.completed || 0}개, 실패 ${bad}개` : stopped ? `다운로드 중지 · 성공 ${c.completed || 0}개, 중지 ${stopped}개` : `영상 ${c.completed || 0}개를 다운로드했어요`;
-      toast({ tone: bad ? '#F04438' : dlp.tone, error: !!bad, title, sub: (settings.dl && settings.dl.saveDir) || '서버 기본 폴더' });
+      const dl = settings.dl || {};
+      toast({ tone: bad ? '#F04438' : dlp.tone, error: !!bad, title, sub: dl.saveDir || (dl.fetch === 'off' ? '서버 폴더' : '다운로드 폴더 › PowerLink 에 저장') });
     }
   }
 

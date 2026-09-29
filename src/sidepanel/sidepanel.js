@@ -615,7 +615,8 @@ function dlStrip() {
   const label = done
     ? `다운로드 ${c.cancelled ? '중지' : '완료'} · 성공 ${c.completed || 0}개${c.error ? ` · 실패 ${c.error}개` : ''}${c.cancelled ? ` · 중지 ${c.cancelled}개` : ''}`
     : `다운로드 중 ${Math.round(b.progress || 0)}% · 완료 ${c.completed || 0}/${b.total}${c.error ? ` · 실패 ${c.error}` : ''}${c.cancelled ? ` · 중지 ${c.cancelled}` : ''}`;
-  const where = b.save_dir || '서버 기본 폴더';
+  const dl = (settings && settings.dl) || {};
+  const where = b.save_dir || (dl.fetch === 'off' ? '서버 폴더' : '다운로드 폴더 › PowerLink');
   const failed = done && c.error ? (b.items || []).filter((it) => it.status === 'error' || it.status === 'failed').slice(0, 3)
     .map((it) => `<div class="pl-dl__err pl-trunc" title="${esc(it.error || '')}">${esc((it.error || '실패').replace(/\[[0-9;]*m/g, '').replace(/^ERROR:\s*/i, ''))}</div>`).join('') : '';
   return `<div class="pl-dl ${done ? (c.error ? 'is-warn' : 'is-done') : ''}" role="status" aria-live="polite">
