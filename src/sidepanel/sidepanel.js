@@ -1,7 +1,7 @@
 // Power Link — side panel (collected links, recent screens, keywords, watchlist)
 // Layout follows design/graphite (Main / List / Detail / Recent boards).
 import { getSettings, setSettings, getLinks, setLinks, updateLink, updateLinks, removeLinks, getWatch, setWatch, getApiKey } from '../shared/storage.js';
-import { PLATFORMS, STORAGE } from '../shared/constants.js';
+import { PLATFORMS, STORAGE, isDownloadable } from '../shared/constants.js';
 import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js';
 import { buildXls, keywordStats } from '../shared/format.js';
 import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal, memoModal, collectionModal } from '../ui/ui.js';
@@ -20,6 +20,7 @@ let links = [], watch = [], settings = null, watchCheckedAt = null, hasKey = fal
 let recent = [], openTabs = new Map(); // recent screens + currently open tabs (key → tab)
 let recentOthers = { profiles: [] }, bridge = null; // other Chrome profiles (native messaging helper)
 let collections = [], showMarks = true; // link folders · page outlines visible
+let dlJob = null, dlTimer = 0;          // 진행 중인 영상 다운로드 배치 { batch_id, total, counts, progress, status, items }
 
 const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], ['ig', '인스타'], ['x', 'X'], ['blog', '블로그'], ['web', '웹']];
 const KINDS = [['all', '종류'], ['post', '게시물·영상'], ['account', '채널·계정']];
@@ -27,6 +28,7 @@ const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], 
 const BAR_ACTIONS = [
   ['bCopy', 'copy', '복사'], ['bOpen', 'external', '새 탭으로 열기'], ['bThumbs', 'image', '썸네일 압축 저장'],
   ['bColl', 'folder', '컬렉션에 넣기'], ['bWatch', 'eye', '워치리스트에 추가'], ['bBookmark', 'bookmark', '북마크에 추가'], ['bExcel', 'download', '엑셀 다운로드'],
+  ['bDownload', 'filmDown', '영상 다운로드 (다운로더 서버로 보내 정한 폴더에 저장)'],
   ['bDelete', 'trash', '목록에서 삭제']
 ];
 
@@ -237,6 +239,7 @@ function renderLinks() {
     </div>
   </div>
   <div class="pl-scroll pl-scroll--bar">${body}</div>
+  ${dlStrip()}
   ${list.length ? `
   <div class="pl-bar" role="toolbar" aria-label="일괄 작업">
     <span class="pl-bar__count" title="${S.sel.size ? '선택한 링크에 적용돼요' : '선택하지 않으면 지금 보이는 링크 전체에 적용돼요'}">${S.sel.size ? `${S.sel.size}개 선택` : `전체 ${list.length}개`}</span>
@@ -605,6 +608,61 @@ function render() {
 }
 
 // ------------------------------------------------------------------ actions
+// ------------------------------------------------------------------ 영상 다운로드 (universal-downloader 서버)
+function dlStrip() {
+  if (!dlJob) return '';
+  const b = dlJob, c = b.counts || {}, done = b.status === 'done';
+  const label = done
+    ? `다운로드 완료 · 성공 ${c.completed || 0}개${c.error ? ` · 실패 ${c.error}개` : ''}`
+    : `다운로드 중 ${Math.round(b.progress || 0)}% · 완료 ${c.completed || 0}/${b.total}${c.error ? ` · 실패 ${c.error}` : ''}`;
+  const where = b.save_dir || '서버 기본 폴더';
+  const failed = done && c.error ? (b.items || []).filter((it) => it.status === 'error' || it.status === 'failed').slice(0, 3)
+    .map((it) => `<div class="pl-dl__err pl-trunc" title="${esc(it.error || '')}">${esc((it.error || '실패').replace(/\[[0-9;]*m/g, '').replace(/^ERROR:\s*/i, ''))}</div>`).join('') : '';
+  return `<div class="pl-dl ${done ? (c.error ? 'is-warn' : 'is-done') : ''}" role="status" aria-live="polite">
+    <div class="pl-dl__head">${icon(done ? (c.error ? 'info' : 'check') : 'filmDown', 'pl-i--sm')}<span class="pl-dl__label pl-trunc">${label}</span>
+      <button type="button" class="pl-ibtn pl-ibtn--sm pl-ibtn--muted" data-act="dlHide" aria-label="닫기" title="닫기">${icon('close', 'pl-i--sm')}</button></div>
+    <div class="pl-dl__meter"><span style="width:${Math.min(100, Math.round(b.progress || 0))}%"></span></div>
+    <div class="pl-dl__where pl-trunc" title="${esc(where)}">저장 위치: ${esc(where)}</div>${failed}
+  </div>`;
+}
+
+function dlPatch(batch) {
+  dlJob = batch; render();
+  if (batch.status === 'done') {
+    clearTimeout(dlTimer); dlTimer = 0;
+    const c = batch.counts || {};
+    toast(c.error ? `다운로드 끝 · 성공 ${c.completed || 0}개, 실패 ${c.error}개` : `영상 ${c.completed || 0}개를 다운로드했어요`, c.error ? 'error' : 'success');
+    // 받은 링크에 시각을 남긴다 (엑셀 내보내기·정렬에 활용)
+    const okUrls = new Set((batch.items || []).filter((it) => it.status === 'completed').map((it) => it.url));
+    const now = new Date().toISOString();
+    const patches = links.filter((l) => okUrls.has(l.url)).map((l) => ({ id: l.id, downloadedAt: now }));
+    if (patches.length) updateLinks(patches);
+  }
+}
+
+async function dlPoll() {
+  if (!dlJob || dlJob.status === 'done') return;
+  const r = await send({ type: 'pl:dlStatus', id: dlJob.batch_id });
+  if (r.ok) dlPatch(r.batch);
+  if (dlJob && dlJob.status !== 'done') dlTimer = setTimeout(dlPoll, 2000);
+}
+
+async function downloadItems(items) {
+  const targets = items.filter(isDownloadable);
+  const skipped = items.length - targets.length;
+  if (!targets.length) { toast('다운로드할 영상 링크가 없어요 (유튜브·틱톡·비메오·빌리빌리 게시물)', 'error'); return; }
+  const dl = settings.dl || {};
+  const modeLabel = { both: '영상+음성', video: '영상만', audio: '음성만' }[dl.mode] || '영상+음성';
+  const lines = [`저장 위치: ${dl.saveDir || '서버 기본 폴더'}`, `${modeLabel}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`];
+  if (skipped) lines.push(`영상이 아닌 링크 ${skipped}개는 건너뛰어요`);
+  if (!(await confirmModal({ title: `영상 ${targets.length}개 다운로드`, message: lines.join('\n'), ok: '다운로드' }))) return;
+  const r = await send({ type: 'pl:dlBatch', urls: targets.map((l) => l.url) });
+  if (!r.ok) { toast(r.message || '다운로드를 시작하지 못했어요', 'error', { label: '설정', run: () => chrome.runtime.openOptionsPage() }); return; }
+  clearTimeout(dlTimer);
+  dlPatch(r.batch);
+  dlTimer = setTimeout(dlPoll, 1500);
+}
+
 // Bulk actions apply to the selection, or to every visible link when nothing is selected.
 const selected = () => (S.sel.size ? links.filter((l) => S.sel.has(l.id)) : filtered());
 const targetIds = () => selected().map((l) => l.id);
@@ -829,6 +887,8 @@ app.addEventListener('click', async (e) => {
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;
     case 'bDelete': await deleteLinks(targetIds()); return;
+    case 'bDownload': await downloadItems(selected()); return;
+    case 'dlHide': clearTimeout(dlTimer); dlTimer = 0; dlJob = null; break;
     case 'bColl': await assignCollection(targetIds()); return;
     case 'hot': S.hot = !S.hot; resetLimit(); break;
     case 'marksToggle': await chrome.storage.local.set({ [STORAGE.showMarks]: !showMarks }); return;

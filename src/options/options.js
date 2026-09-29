@@ -19,6 +19,7 @@ const NAV = [
   ['fields', '수집 항목', 'fields', '링크를 모을 때 어떤 정보까지 담을지 정해요.'],
   ['cats', '카테고리', 'tag', '링크를 나눌 카테고리와 자동 분류 규칙이에요.'],
   ['api', 'YouTube API', 'key', '유튜브 조회수·구독자 등은 YouTube Data API 키로 가져와요.'],
+  ['download', '영상 다운로드', 'filmDown', '수집한 영상 링크를 다운로더 서버로 보내 정한 폴더에 내려받아요.'],
   ['recent', '최근 화면', 'clock', '사이드바 ‘최근 화면’ 기록과 다른 크롬 프로필 연동이에요.'],
   ['general', '일반', 'sliders', '열기 방식, 알림, 데이터 관리를 정해요.'],
   ['design', '디자인', 'palette', '사이드바, 팝업, 설정 화면의 모양을 정해요.']
@@ -205,6 +206,41 @@ function viewApi() {
   </section>`;
 }
 
+// ------------------------------------------------------------------ 영상 다운로드
+let dlStatus = null; // { ok, message } — 연결 확인 결과
+function viewDownload() {
+  const dl = settings.dl || {};
+  const dot = dlStatus ? `<span class="pl-odot ${dlStatus.ok ? '' : 'pl-odot--off'}" style="margin-right:6px;"></span>${esc(dlStatus.message)}` : '확인 전';
+  return `
+  <section class="pl-card pl-card--pad">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="pl-grow"><div class="pl-h2">다운로더 서버 주소</div><p class="pl-desc" style="margin-top:4px;">universal-downloader 서버의 API 주소예요. 서버를 클라우드로 옮기면 이 주소만 바꾸면 돼요.</p></div>
+      <span class="pl-caption" style="display:inline-flex;align-items:center;">${dot}</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <label class="pl-search pl-grow" style="border-radius:8px;">${icon('link')}
+        <input type="text" id="dlServer" value="${esc(dl.server || '')}" placeholder="http://localhost:8000/api" aria-label="다운로더 서버 주소" autocomplete="off" spellcheck="false">
+      </label>
+      <button type="button" class="pl-btn pl-btn--lg" id="dlTest">연결 확인</button>
+    </div>
+  </section>
+  <section class="pl-card">
+    ${row('저장 폴더', '받은 파일을 넣을 폴더(절대경로)예요. 비우면 서버의 기본 다운로드 폴더에 저장돼요. 서버가 이 PC에서 돌 때만 의미가 있어요.', `<input type="text" class="pl-input" id="dlSaveDir" value="${esc(dl.saveDir || '')}" placeholder="예: D:\\Videos\\PowerLink" spellcheck="false" style="width:260px;">`)}
+    ${row('받을 트랙', '영상+음성이 기본이에요. 음성만 고르면 m4a/mp3 로 받아요.', selectBox('id="dlMode"', [['both', '영상 + 음성'], ['video', '영상만'], ['audio', '음성만']], dl.mode || 'both', '받을 트랙', 130))}
+    ${row('최대 화질', '이 해상도 이하에서 가장 좋은 화질을 골라요.', selectBox('id="dlQuality"', [['', '최고 화질'], ['2160', '2160p (4K)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], String(dl.quality || ''), '최대 화질', 130))}
+    ${row('동시 다운로드', '한 번에 몇 개씩 받을지 정해요. 많으면 빨라지지만 사이트가 차단할 수 있어요.', selectBox('id="dlConc"', [1, 2, 3, 4].map((n) => [String(n), n + '개']), String(dl.concurrency || 2), '동시 다운로드', 110))}
+  </section>
+  <section class="pl-card pl-card--pad">
+    <div class="pl-h2">사용 방법</div>
+    <ol class="pl-steps" style="margin:0;padding:0;list-style:none;">${[
+      '다운로더 서버를 켜요 (universal-downloader 폴더의 run-server, 또는 클라우드 주소).',
+      '사이드바 ‘수집 링크’에서 받을 영상을 체크해요. 아무것도 고르지 않으면 지금 보이는 링크 전체가 대상이에요.',
+      '하단 일괄 작업 바의 ‘영상 다운로드’(필름 아이콘)를 누르고 확인하면 서버가 위 폴더에 받아요. 진행률은 사이드바 아래에 표시돼요.'
+    ].map((t, i) => `<li><b>${i + 1}</b><span>${t}</span></li>`).join('')}</ol>
+    <span class="pl-caption">유튜브·틱톡·비메오·빌리빌리 게시물 링크만 보내고, 채널/계정·블로그·X 링크는 건너뛰어요. 로그인이 필요한 영상은 서버 쪽 쿠키 설정을 따라요.</span>
+  </section>`;
+}
+
 // ------------------------------------------------------------------ 최근 화면
 function viewRecent() {
   const on = !!(bridge && bridge.connected);
@@ -268,7 +304,7 @@ function viewDesign() {
 // ------------------------------------------------------------------ frame
 function render() {
   const cur = NAV.find((n) => n[0] === tab) || NAV[0];
-  const views = { rules: viewRules, fields: viewFields, cats: viewCats, api: viewApi, recent: viewRecent, general: viewGeneral, design: viewDesign };
+  const views = { rules: viewRules, fields: viewFields, cats: viewCats, api: viewApi, download: viewDownload, recent: viewRecent, general: viewGeneral, design: viewDesign };
   const main = app.querySelector('.pl-opt__main');
   const scroll = main ? main.scrollTop : 0;
   app.innerHTML = `
@@ -342,6 +378,11 @@ app.addEventListener('click', async (e) => {
     quota = (await send({ type: 'pl:quota' })).units || quota;
     render(); return;
   }
+  if (t.id === 'dlTest') {
+    const server = (document.getElementById('dlServer') || {}).value;
+    dlStatus = { ok: false, message: '확인 중…' }; render();
+    dlStatus = await send({ type: 'pl:dlHealth', server }); render(); return;
+  }
   if (t.id === 'bridgeRetry') {
     await send({ type: 'pl:bridgeReconnect' });
     setTimeout(async () => { bridge = (await chrome.storage.local.get(STORAGE.bridge))[STORAGE.bridge] || null; render(); if (!bridge || !bridge.connected) toast('연결하지 못했어요 — install.bat 실행 여부를 확인해 주세요', 'error'); }, 1500);
@@ -373,6 +414,11 @@ app.addEventListener('change', async (e) => {
   if (d.rule !== undefined && d.rk && t.tagName === 'SELECT') return setRule(+d.rule, { [d.rk]: t.value });
   if (d.crule !== undefined) return save({ catRules: settings.catRules.map((r, i) => (i === +d.crule ? Object.assign({}, r, { [d.ck]: t.value }) : r)) });
   if (t.id === 'confirmOver') return save({ confirmOver: +t.value });
+  if (t.id === 'dlServer') { dlStatus = null; return save({ dl: Object.assign({}, settings.dl, { server: t.value.trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.dl.server }) }); }
+  if (t.id === 'dlSaveDir') return save({ dl: Object.assign({}, settings.dl, { saveDir: t.value.trim() }) });
+  if (t.id === 'dlMode') return save({ dl: Object.assign({}, settings.dl, { mode: t.value }) });
+  if (t.id === 'dlQuality') return save({ dl: Object.assign({}, settings.dl, { quality: t.value }) });
+  if (t.id === 'dlConc') return save({ dl: Object.assign({}, settings.dl, { concurrency: +t.value }) });
   if (d.collName !== undefined) {
     const name = t.value.trim().slice(0, 40);
     if (!name) { render(); return; }

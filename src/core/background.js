@@ -527,7 +527,58 @@ async function checkWatchlist() {
 
 // ------------------------------------------------------------------ downloads
 // ------------------------------------------------------------------ message router
+// ------------------------------------------------------------------ 영상 다운로더 연동
+// universal-downloader 서버의 배치 API. 사이드바/팝업이 URL 목록만 넘기면 서버가 정한 폴더에 받는다.
+const dlBase = (s) => String((s && s.dl && s.dl.server) || 'http://localhost:8000/api').trim().replace(/\/+$/, '');
+async function dlFetch(path, init) {
+  const settings = await getSettings();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), init && init.timeout ? init.timeout : 15000);
+  try {
+    const res = await fetch(dlBase(settings) + path, Object.assign({ signal: ctl.signal }, init, { headers: Object.assign({ 'Content-Type': 'application/json' }, (init && init.headers) || {}) }));
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text.slice(0, 200) }; }
+    if (!res.ok) throw new Error((data && (data.detail || data.message)) || `서버 오류 ${res.status}`);
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('다운로더 서버가 응답하지 않아요');
+    if (/Failed to fetch|NetworkError/i.test(e.message)) throw new Error(`다운로더 서버(${dlBase(settings)})에 연결할 수 없어요`);
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
 const handlers = {
+  // 다운로더 서버 연결 확인 → { ok, message }
+  'pl:dlHealth': async (msg) => {
+    try {
+      const prev = await getSettings();
+      const server = msg.server ? String(msg.server).trim().replace(/\/+$/, '') : dlBase(prev);
+      const res = await fetch(server + '/health', { signal: AbortSignal.timeout(6000) });
+      const j = await res.json();
+      return j && j.status === 'ok' ? { ok: true, message: '연결됐어요' } : { ok: false, message: '서버 응답이 올바르지 않아요' };
+    } catch (e) { return { ok: false, message: '연결할 수 없어요 — 서버가 꺼져 있거나 주소가 달라요' }; }
+  },
+  // URL 목록 일괄 다운로드 시작 → { ok, batch }
+  'pl:dlBatch': async (msg) => {
+    const s = await getSettings();
+    const dl = s.dl || {};
+    const urls = (msg.urls || []).filter((u) => /^https?:\/\//i.test(u));
+    if (!urls.length) return { ok: false, message: '다운로드할 링크가 없어요' };
+    const body = {
+      urls,
+      save_dir: (msg.saveDir !== undefined ? msg.saveDir : dl.saveDir) || null,
+      mode: msg.mode || dl.mode || 'both',
+      quality: (msg.quality !== undefined ? msg.quality : dl.quality) || null,
+      concurrency: Number(dl.concurrency) || 2,
+      referer: msg.referer || null
+    };
+    const batch = await dlFetch('/batch', { method: 'POST', body: JSON.stringify(body) });
+    return { ok: true, batch, message: `${batch.total}개 다운로드를 시작했어요` };
+  },
+  // 배치 진행 상태 → { ok, batch }
+  'pl:dlStatus': async (msg) => ({ ok: true, batch: await dlFetch('/batch/' + encodeURIComponent(msg.id)) }),
+
   'pl:grab': async (msg, sender) => runAction({ action: msg.action, links: msg.links || [], sourceTab: sender.tab, source: 'grab' }),
 
   'pl:collectTabs': async (msg) => {

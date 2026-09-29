@@ -84,8 +84,23 @@ export const DEFAULT_SETTINGS = {
     { k: 'AI, 자동화, 앱, 코딩', c: '과학기술' }
   ],
   popup: { method: 'window', scope: 'current', plats: ['all'], kinds: ['all'], after: 'keep', sort: 'none' },
-  sidepanel: { view: 'list' }
+  sidepanel: { view: 'list' },
+  // 영상 다운로더(universal-downloader 서버) 연동 — 수집한 링크를 골라 한 번에 내려받기
+  dl: {
+    server: 'http://localhost:8000/api', // 다운로더 서버 API 주소 (클라우드 서버로 옮기면 여기만 바꿈)
+    saveDir: '',                         // 저장 폴더(절대경로). 비우면 서버 기본 폴더. 서버가 같은 PC 일 때만 의미 있음
+    mode: 'both',                        // both(영상+음성) | video | audio
+    quality: '',                         // '' = 최고 화질, 또는 2160/1440/1080/720/480
+    concurrency: 2                       // 동시에 받을 개수 (1~4)
+  }
 };
+
+// 다운로더가 받을 수 있는 게시물 링크인지 (계정/채널 링크·블로그·X 는 제외)
+export const DL_HOSTS = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|vimeo\.com|bilibili\.com|instagram\.com)$/i;
+export function isDownloadable(it) {
+  if (!it || it.kind === 'account') return false;
+  try { return DL_HOSTS.test(new URL(it.url).hostname); } catch (e) { return false; }
+}
 
 export const STORAGE = {
   settings: 'pl_settings',     // chrome.storage.sync

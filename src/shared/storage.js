@@ -12,6 +12,7 @@ export async function getSettings() {
   return Object.assign(d, s, {
     popup: Object.assign(d.popup, s.popup || {}),
     sidepanel: Object.assign(d.sidepanel, s.sidepanel || {}),
+    dl: Object.assign(d.dl, s.dl || {}),
     fieldsOff: s.fieldsOff || d.fieldsOff,
     rules: Array.isArray(s.rules) && s.rules.length ? s.rules : d.rules
   });

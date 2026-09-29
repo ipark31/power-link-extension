@@ -460,6 +460,23 @@ html[data-theme="dark"] .pl-btn:hover { filter: brightness(1.15); }
 .pl-sheet__acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .pl-bar__sep { width: 1px; height: 20px; margin: 0 3px; background: var(--pl-bar-sep); flex-shrink: 0; }
 
+/* 영상 다운로드 진행 카드 (일괄 작업 바 위에 뜸) */
+.pl-dl {
+  position: absolute; left: 12px; right: 12px; bottom: 68px; z-index: 5;
+  padding: 8px 8px 8px 12px; border-radius: 12px; border: 1px solid var(--pl-border);
+  background: var(--pl-bg); box-shadow: var(--pl-shadow-bar); display: flex; flex-direction: column; gap: 6px; animation: pl-in .15s ease;
+}
+.pl-dl__head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+.pl-dl__head .pl-i { flex-shrink: 0; color: var(--pl-text2); }
+.pl-dl.is-done .pl-dl__head .pl-i { color: var(--pl-green, #16a34a); }
+.pl-dl__label { flex: 1; min-width: 0; }
+.pl-dl__meter { height: 4px; border-radius: 2px; background: var(--pl-border); overflow: hidden; }
+.pl-dl__meter span { display: block; height: 100%; background: var(--pl-text); transition: width .4s ease; }
+.pl-dl.is-done .pl-dl__meter span { background: var(--pl-green, #16a34a); }
+.pl-dl.is-warn .pl-dl__meter span { background: var(--pl-red, #dc2626); }
+.pl-dl__where, .pl-dl__err { font-size: 11px; color: var(--pl-muted); }
+.pl-dl__err { color: var(--pl-red, #dc2626); }
+
 /* recent screens */
 .pl-recent-list { padding: 4px 0; }
 .pl-recent { display: flex; align-items: center; gap: 4px; margin: 0 6px; padding: 0 6px 0 0; border-radius: 10px; }
