@@ -8,7 +8,10 @@
   const DEMO = !!globalThis.PL_DEMO;
   const DRAG_START = 8;          // px before a press becomes a drag
   const EDGE = 40;               // px from viewport edge that triggers autoscroll
-  const ACTION_LABEL = { copy: '복사', tabs: '새 탭으로 열기', window: '새 창으로 열기', save: '목록에 저장' };
+  const ACTION_LABEL = { copy: '복사', tabs: '새 탭으로 열기', window: '새 창으로 열기', save: '목록에 저장', download: '영상 다운로드' };
+  // 다운로더 서버가 받을 수 있는 게시물 링크 (계정/채널·블로그·X 제외)
+  const DL_HOSTS = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|vimeo\.com|bilibili\.com|instagram\.com)$/i;
+  const dlOk = (l) => l && l.kind !== 'account' && DL_HOSTS.test((l.domain || '').replace(/^(www|m)\./, ''));
   const SHAPE_LABEL = { box: '박스', lasso: '선 긋기' };
   const MOD_LABEL = { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', none: '' };
   const IS_WIN = /Win/i.test(navigator.platform || navigator.userAgent);
@@ -17,7 +20,8 @@
     rules: [
       { id: 'r1', enabled: true, mod: 'ctrl', button: 'right', shape: 'box', action: 'copy', color: '#2F6BFF' },
       { id: 'r2', enabled: true, mod: 'shift', button: 'right', shape: 'box', action: 'tabs', color: '#E8590C' },
-      { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#0E9384' }
+      { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#0E9384' },
+      { id: 'r4', enabled: true, mod: 'none', button: 'right', shape: 'box', action: 'download', color: '#C83F55' }
     ],
     dedupe: true, highlight: true, autoscroll: true, sameSite: false, confirmOver: 20, notify: true, collect: 'title'
   };
@@ -71,6 +75,32 @@
     .mt { font-size: 15px; font-weight: 500; }
     .md { font-size: 13px; line-height: 1.55; color: #D0D0D0; }
     .modal .acts { margin-top: 8px; }
+    /* 다운로드 목록창 (우클릭 드래그 → 영상 고르기 → 다운로드) */
+    .dlp { position: fixed; right: 24px; bottom: 24px; width: 400px; max-height: min(70vh, 640px); z-index: 2147483647; pointer-events: auto; display: flex; flex-direction: column;
+           border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 16px 36px -12px rgba(0,0,0,.6); animation: in .18s ease; overflow: hidden; }
+    .dlp.out { animation: out .18s ease forwards; }
+    .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid #262626; }
+    .dlp-h .ic { background: var(--tone, #C83F55); }
+    .dlp-h .tt { flex: 1; }
+    .dlp-h .x { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
+    .dlp-h .x:hover { background: #272727; color: #F1F1F1; }
+    .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+    .dlp-list { flex: 1; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .dlp-row { display: grid; grid-template-columns: 18px 56px 1fr; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+    .dlp-row:hover { background: #1A1A1A; }
+    .dlp-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--tone, #C83F55); cursor: pointer; }
+    .dlp-th { width: 56px; height: 32px; border-radius: 6px; background: #272727 center/cover no-repeat; flex-shrink: 0; }
+    .dlp-t { font-size: 12px; line-height: 1.35; max-height: 2.7em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .dlp-m { font-size: 11px; color: #AAAAAA; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-m.ok { color: #4ADE80; } .dlp-m.err { color: #F87171; } .dlp-m.run { color: #F1F1F1; }
+    .dlp-f { padding: 10px 12px 12px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 8px; }
+    .dlp-where { font-size: 11px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-bar { height: 4px; border-radius: 2px; background: #272727; overflow: hidden; display: none; }
+    .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
+    .dlp-bar.on { display: block; }
+    .dlp-acts { display: flex; gap: 8px; align-items: center; }
+    .dlp-acts .n { font-size: 12px; color: #AAAAAA; flex: 1; }
+    button.pri:disabled { opacity: .45; cursor: default; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes out { to { opacity: 0; transform: translateY(6px); } }`;
 
@@ -584,7 +614,8 @@
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
     // toggle: outlined links are deselected (outline off + removed from the list), the rest are selected
     const fresh = new Set(), off = new Set();
-    for (const h of hits) (isMarked(h.a) ? off : fresh).add(h);
+    // 영상 다운로드는 토글하지 않는다: 이미 담긴 영상을 다시 감싸도 선택 해제가 아니라 목록창에 올린다
+    for (const h of hits) (rule.action !== 'download' && isMarked(h.a) ? off : fresh).add(h);
     const offKeys = new Set([...off].map((h) => keyOf(h.a.href)));
     if (offKeys.size) {
       unmarkUrls(offKeys);
@@ -610,6 +641,15 @@
       globalThis.dispatchEvent(new CustomEvent('pl-demo-result', { detail: { count: links.length, action: rule.action } }));
       return;
     }
+    if (rule.action === 'download') {
+      const vids = links.filter(dlOk);
+      if (!vids.length) { toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리 게시물 링크만 받을 수 있어요' }); return; }
+      const r = await send({ type: 'pl:grab', action: 'download', shape: rule.shape, mod: rule.mod, links: vids, page: { url: location.href, title: document.title } });
+      if (!r || !r.ok) { toast({ tone: '#F04438', error: true, title: (r && r.message) || '처리하지 못했어요', sub: how }); return; }
+      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', true);
+      openDlPanel(vids, rule.color || '#C83F55');
+      return;
+    }
     const res = await send({ type: 'pl:grab', action: rule.action, shape: rule.shape, mod: rule.mod, links, page: { url: location.href, title: document.title } });
     if (!res || !res.ok) { toast({ tone: '#F04438', error: true, title: (res && res.message) || '처리하지 못했어요', sub: how }); return; }
     markUrls(newKeys, rule.color || '#2F6BFF', saves);
@@ -627,6 +667,110 @@
     if (shown.length > 3) finalLines.push(`외 ${shown.length - 3}개`);
     toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
   }
+  // ---------------------------------------------------------------- 다운로드 목록창
+  // 우클릭 드래그로 고른 영상을 보여 주고, [다운로드] 를 누르면 백그라운드가 다운로더 서버 배치 API 로 보낸다.
+  // 창은 한 개만 두고, 새로 드래그하면 목록에 이어 붙는다. 진행률은 2초마다 갱신.
+  let dlp = null; // { el, items: Map(url → {link, row}), job, timer, tone }
+  const escH = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const MODE_LABEL = { both: '영상+음성', video: '영상만', audio: '음성만' };
+  function dlWhere() {
+    const dl = settings.dl || {};
+    return `저장 위치: ${dl.saveDir || '서버 기본 폴더'} · ${MODE_LABEL[dl.mode] || '영상+음성'}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`;
+  }
+  function closeDlPanel() {
+    if (!dlp) return;
+    clearTimeout(dlp.timer);
+    const el = dlp.el; dlp = null;
+    el.classList.add('out'); setTimeout(() => el.remove(), 200);
+  }
+  function dlRow(link) {
+    const row = document.createElement('label');
+    row.className = 'dlp-row';
+    row.innerHTML = `<input type="checkbox" checked><span class="dlp-th" style="${link.thumb ? `background-image:url(&quot;${escH(link.thumb)}&quot;)` : ''}"></span><span><div class="dlp-t">${escH(link.title || link.url)}</div><div class="dlp-m">${escH((link.domain || '').replace(/^www\./, ''))}</div></span>`;
+    return row;
+  }
+  function dlUpdateCount() {
+    if (!dlp || dlp.job) return;
+    const n = [...dlp.items.values()].filter((it) => it.row.querySelector('input').checked).length;
+    dlp.el.querySelector('.dlp-acts .n').textContent = `${dlp.items.size}개 중 ${n}개 선택`;
+    const b = dlp.el.querySelector('button.pri'); b.textContent = `다운로드 ${n}개`; b.disabled = !n;
+  }
+  function openDlPanel(links, tone) {
+    ensureOverlay();
+    if (!dlp || dlp.job) {
+      if (dlp) closeDlPanel();
+      const el = document.createElement('div');
+      el.className = 'dlp';
+      el.style.setProperty('--tone', tone || '#C83F55');
+      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+        <div class="dlp-list"></div>
+        <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
+          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="pri">다운로드</button></div></div>`;
+      el.querySelector('.x').addEventListener('click', closeDlPanel);
+      el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
+      el.querySelector('.pri').addEventListener('click', startDl);
+      el.addEventListener('change', dlUpdateCount);
+      el.addEventListener('mousedown', (e) => e.stopPropagation(), true); // 창 안에서 드래그가 시작되지 않게
+      el.addEventListener('contextmenu', (e) => e.stopPropagation(), true);
+      toastWrap.parentNode.appendChild(el);
+      dlp = { el, items: new Map(), job: null, timer: 0, tone };
+    }
+    const list = dlp.el.querySelector('.dlp-list');
+    for (const l of links) {
+      const k = keyOf(l.url);
+      if (dlp.items.has(k)) continue;
+      const row = dlRow(l); list.appendChild(row); dlp.items.set(k, { link: l, row });
+    }
+    dlUpdateCount();
+  }
+  async function startDl() {
+    if (!dlp || dlp.job) return;
+    const picked = [...dlp.items.values()].filter((it) => it.row.querySelector('input').checked);
+    if (!picked.length) return;
+    const btn = dlp.el.querySelector('button.pri'); btn.disabled = true; btn.textContent = '보내는 중…';
+    const r = await send({ type: 'pl:dlBatch', urls: picked.map((it) => it.link.url), referer: location.href });
+    if (!dlp) return;
+    if (!r || !r.ok) {
+      btn.disabled = false; btn.textContent = `다운로드 ${picked.length}개`;
+      toast({ tone: '#F04438', error: true, title: (r && r.message) || '다운로드를 시작하지 못했어요', sub: '설정 › 영상 다운로드에서 서버 주소를 확인하세요', actions: [{ label: '설정 열기', run: () => send({ type: 'pl:openOptions' }) }] });
+      return;
+    }
+    // 진행 모드: 체크 안 한 행은 지우고, 체크박스는 잠근다
+    for (const [k, it] of dlp.items) { if (!picked.includes(it)) { it.row.remove(); dlp.items.delete(k); } else it.row.querySelector('input').disabled = true; }
+    dlp.job = r.batch;
+    dlp.el.querySelector('.dlp-bar').classList.add('on');
+    dlp.el.querySelector('.cfg').style.display = 'none';
+    btn.textContent = '닫기'; btn.disabled = false; btn.onclick = closeDlPanel;
+    btn.removeEventListener('click', startDl);
+    dlRender(r.batch);
+    dlp.timer = setTimeout(dlPoll, 1500);
+  }
+  async function dlPoll() {
+    if (!dlp || !dlp.job) return;
+    const r = await send({ type: 'pl:dlStatus', id: dlp.job.batch_id });
+    if (!dlp) return;
+    if (r && r.ok) { dlp.job = r.batch; dlRender(r.batch); }
+    if (dlp.job.status !== 'done') dlp.timer = setTimeout(dlPoll, 2000);
+  }
+  function dlRender(b) {
+    if (!dlp) return;
+    const c = b.counts || {};
+    dlp.el.querySelector('.dlp-bar span').style.width = Math.min(100, Math.round(b.progress || 0)) + '%';
+    const done = b.status === 'done';
+    dlp.el.querySelector('.dlp-acts .n').textContent = done
+      ? `완료 · 성공 ${c.completed || 0}개${c.error ? ` · 실패 ${c.error}개` : ''}`
+      : `다운로드 중 ${Math.round(b.progress || 0)}% · 완료 ${c.completed || 0}/${b.total}${c.error ? ` · 실패 ${c.error}` : ''}`;
+    for (const it of b.items || []) {
+      const row = dlp.items.get(keyOf(it.url)); if (!row) continue;
+      const m = row.row.querySelector('.dlp-m');
+      if (it.status === 'completed') { m.className = 'dlp-m ok'; m.textContent = '완료' + (it.file_path ? ' · ' + it.file_path.split(/[\\/]/).pop() : ''); }
+      else if (it.status === 'error' || it.status === 'failed') { m.className = 'dlp-m err'; m.textContent = '실패 · ' + (it.error || ''); m.title = it.error || ''; }
+      else if (it.status === 'downloading' || it.status === 'processing') { m.className = 'dlp-m run'; m.textContent = `${Math.round(it.progress || 0)}%` + (it.status_msg ? ' · ' + it.status_msg : ''); }
+      else { m.className = 'dlp-m'; m.textContent = '대기 중'; }
+    }
+    if (done) toast({ tone: c.error ? '#F04438' : dlp.tone, error: !!c.error, title: c.error ? `다운로드 끝 · 성공 ${c.completed || 0}개, 실패 ${c.error}개` : `영상 ${c.completed || 0}개를 다운로드했어요`, sub: (settings.dl && settings.dl.saveDir) || '서버 기본 폴더' });
+  }
+
   async function writeClip(text, html) {
     try {
       if (html && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'text/html': new Blob([html], { type: 'text/html' }) })]);

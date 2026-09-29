@@ -8,7 +8,8 @@
   globalThis.__PL_LOADER__ = true;
 
   let rules = [
-    { enabled: true, mod: 'ctrl', button: 'right' }, { enabled: true, mod: 'shift', button: 'right' }, { enabled: true, mod: 'alt', button: 'right' }
+    { enabled: true, mod: 'ctrl', button: 'right' }, { enabled: true, mod: 'shift', button: 'right' }, { enabled: true, mod: 'alt', button: 'right' },
+    { enabled: true, mod: 'none', button: 'right' }
   ];
   try {
     chrome.storage.sync.get('pl_settings', (r) => { if (!chrome.runtime.lastError && r && r.pl_settings && Array.isArray(r.pl_settings.rules)) rules = r.pl_settings.rules; });

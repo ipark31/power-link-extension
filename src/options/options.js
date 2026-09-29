@@ -45,14 +45,14 @@ function conflictIds() {
 // ------------------------------------------------------------------ 수집 규칙
 function viewRules() {
   const bad = conflictIds();
-  const MOD = { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt' };
+  const MOD = { none: '', ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt' };
   return `
   <section class="pl-card pl-card--clip">
     ${settings.rules.map((r, i) => `
     <div class="pl-rule ${bad.has(r.id) ? 'is-conflict' : ''}">
       <div class="pl-rule__line">
         <button type="button" role="switch" class="pl-switch" aria-checked="${r.enabled !== false}" data-rule="${i}" data-rk="enabled" aria-label="규칙 사용"></button>
-        <span class="pl-rule__keys"><kbd class="pl-kbd pl-kbd--md">${MOD[r.mod] || r.mod}</kbd><span class="pl-muted">+</span><span>${r.button === 'left' ? '좌클릭' : '우클릭'} 드래그</span></span>
+        <span class="pl-rule__keys">${r.mod === 'none' ? '' : `<kbd class="pl-kbd pl-kbd--md">${MOD[r.mod] || r.mod}</kbd><span class="pl-muted">+</span>`}<span>${r.button === 'left' ? '좌클릭' : '우클릭'} 드래그</span></span>
         <span class="pl-rule__shape"><span class="pl-rule__mark ${r.shape === 'lasso' ? 'pl-rule__mark--lasso' : ''}" style="border-color:${esc(r.color)}" title="규칙 색"></span>${r.shape === 'lasso' ? '선 긋기' : '박스'}</span>
         ${icon('arrow', 'pl-muted')}
         <span class="pl-rule__action">${ACTIONS[r.action]?.label || ''}${bad.has(r.id) ? '<span class="pl-caption" style="font-weight:400;"> · 단축키가 겹쳐요</span>' : ''}</span>
@@ -60,7 +60,7 @@ function viewRules() {
       </div>
       ${ruleEdit === i ? `
       <div class="pl-rule__edit">
-        <span class="pl-label">키</span>${selectBox(`data-rule="${i}" data-rk="mod"`, [['ctrl', 'Ctrl'], ['shift', 'Shift'], ['alt', 'Alt']], r.mod, '수정 키', 90)}
+        <span class="pl-label">키</span>${selectBox(`data-rule="${i}" data-rk="mod"`, [['none', '없음'], ['ctrl', 'Ctrl'], ['shift', 'Shift'], ['alt', 'Alt']], r.mod, '수정 키', 90)}
         <span class="pl-label">버튼</span>${selectBox(`data-rule="${i}" data-rk="button"`, [['right', '우클릭 드래그'], ['left', '좌클릭 드래그']], r.button, '마우스 버튼', 140)}
         <span class="pl-label">모양</span><div class="pl-seg" role="group" aria-label="모양">${[['box', '박스'], ['lasso', '선 긋기']].map(([v, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${r.shape === v}" data-rule="${i}" data-rk="shape" data-val="${v}">${l}</button>`).join('')}</div>
         <span class="pl-label">동작</span>${selectBox(`data-rule="${i}" data-rk="action"`, Object.entries(ACTIONS).map(([k, a]) => [k, a.label]), r.action, '동작', 140)}
@@ -234,8 +234,8 @@ function viewDownload() {
     <div class="pl-h2">사용 방법</div>
     <ol class="pl-steps" style="margin:0;padding:0;list-style:none;">${[
       '다운로더 서버를 켜요 (universal-downloader 폴더의 run-server, 또는 클라우드 주소).',
-      '사이드바 ‘수집 링크’에서 받을 영상을 체크해요. 아무것도 고르지 않으면 지금 보이는 링크 전체가 대상이에요.',
-      '하단 일괄 작업 바의 ‘영상 다운로드’(필름 아이콘)를 누르고 확인하면 서버가 위 폴더에 받아요. 진행률은 사이드바 아래에 표시돼요.'
+      '페이지에서 <b>우클릭 드래그</b>로 영상 링크를 감싸면 다운로드 목록창이 떠요. 체크를 조정한 뒤 [다운로드]를 누르면 서버가 위 폴더에 받아요. (수집 규칙에서 키 조합을 바꿀 수 있어요)',
+      '사이드바 ‘수집 링크’에서도 영상을 체크한 뒤 하단 바의 ‘영상 다운로드’(필름 아이콘)로 받을 수 있어요. 진행률은 사이드바 아래에 표시돼요.'
     ].map((t, i) => `<li><b>${i + 1}</b><span>${t}</span></li>`).join('')}</ol>
     <span class="pl-caption">유튜브·틱톡·비메오·빌리빌리 게시물 링크만 보내고, 채널/계정·블로그·X 링크는 건너뛰어요. 로그인이 필요한 영상은 서버 쪽 쿠키 설정을 따라요.</span>
   </section>`;
@@ -356,7 +356,7 @@ app.addEventListener('click', async (e) => {
   if (d.ruleDel !== undefined) { if (settings.rules.length <= 1) return toast('규칙은 하나 이상 있어야 해요', 'warning'); ruleEdit = -1; return save({ rules: settings.rules.filter((_, j) => j !== +d.ruleDel) }); }
   if (t.id === 'addRule') {
     const used = new Set(settings.rules.map((r) => r.mod + ':' + r.button));
-    const free = ['ctrl', 'shift', 'alt'].flatMap((m) => ['right', 'left'].map((b) => [m, b])).find(([m, b]) => !used.has(m + ':' + b)) || ['ctrl', 'left'];
+    const free = ['ctrl', 'shift', 'alt', 'none'].flatMap((m) => ['right', 'left'].map((b) => [m, b])).filter(([m, b]) => !(m === 'none' && b === 'left')).find(([m, b]) => !used.has(m + ':' + b)) || ['ctrl', 'left'];
     ruleEdit = settings.rules.length;
     return save({ rules: settings.rules.concat({ id: uid(), enabled: true, mod: free[0], button: free[1], shape: 'box', action: 'save', color: RULE_COLORS[settings.rules.length % RULE_COLORS.length] }) });
   }

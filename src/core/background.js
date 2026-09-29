@@ -1,7 +1,7 @@
 // Power Link — service worker (ES module)
 import '../shared/classify.js';
-import { STORAGE } from '../shared/constants.js';
-import { getSettings, getLinks, setLinks, saveLinks, updateLinks, getApiKey, getWatch, setWatch } from '../shared/storage.js';
+import { STORAGE, DOWNLOAD_RULE } from '../shared/constants.js';
+import { getSettings, setSettings, getLinks, setLinks, saveLinks, updateLinks, getApiKey, getWatch, setWatch } from '../shared/storage.js';
 import { enrichYouTube, testKey, checkChannel, getQuota } from '../shared/youtube.js';
 import { buildCopy, applyCategoryRules } from '../shared/format.js';
 import { cleanTitle, hostOf } from '../shared/util.js';
@@ -11,11 +11,19 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }); } catch (e) { /* older Chrome */ }
   chrome.alarms.create('pl-watch', { periodInMinutes: 360 });
   chrome.alarms.create('pl-bridge', { periodInMinutes: 1 });
-  if (details.reason === 'update' || details.reason === 'install') await migrateV1();
+  if (details.reason === 'update' || details.reason === 'install') { await migrateV1(); await addDownloadRule(); }
   // first install: open the hands-on guide (not on updates or reloads)
   if (details.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') }).catch(() => {});
   seedRecent().catch(() => {});
 });
+
+// v2.8: 저장된 규칙에 '영상 다운로드'가 없고 '수정키 없음 + 우클릭'이 비어 있으면 기본 규칙을 한 번 추가
+async function addDownloadRule() {
+  const s = await getSettings();
+  const rules = Array.isArray(s.rules) ? s.rules : [];
+  if (rules.some((r) => r.action === 'download') || rules.some((r) => r.mod === 'none' && r.button === 'right')) return;
+  await setSettings({ rules: rules.concat(Object.assign({}, DOWNLOAD_RULE)) });
+}
 
 // v1.x stored links under "savedLinks"; bring them into the v2 list once.
 async function migrateV1() {
@@ -370,7 +378,7 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
   let message = '';
   let copyPayload = null;
 
-  if (action === 'save' || settings.alsoSave) {
+  if (action === 'save' || action === 'download' || settings.alsoSave) {
     const before = await getLinks();
     const ids = await saveLinks(items);
     undoToken = await remember(before);
@@ -389,6 +397,8 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
     message = `새 창에 링크 ${items.length}개를 열었어요`;
   } else if (action === 'save') {
     message = `링크 ${items.length}개를 목록에 저장했어요`;
+  } else if (action === 'download') {
+    message = `영상 ${items.length}개를 목록에 담았어요`;
   }
   await chrome.storage.local.set({ [STORAGE.lastGrab]: { at: Date.now(), count: items.length, action } });
   return { ok: true, message, note: en.note, undoToken, count: items.length, copyPayload, titles: items.map((i) => i.title || i.url) };
@@ -576,6 +586,7 @@ const handlers = {
     const batch = await dlFetch('/batch', { method: 'POST', body: JSON.stringify(body) });
     return { ok: true, batch, message: `${batch.total}개 다운로드를 시작했어요` };
   },
+  'pl:openOptions': async () => { await chrome.runtime.openOptionsPage(); return { ok: true }; },
   // 배치 진행 상태 → { ok, batch }
   'pl:dlStatus': async (msg) => ({ ok: true, batch: await dlFetch('/batch/' + encodeURIComponent(msg.id)) }),
 

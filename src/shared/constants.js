@@ -15,10 +15,13 @@ export const ACTIONS = {
   copy: { label: '복사', color: '#2F6BFF' },
   tabs: { label: '새 탭으로 열기', color: '#E8590C' },
   window: { label: '새 창으로 열기', color: '#7A5AF8' },
-  save: { label: '목록에 저장', color: '#0E9384' }
+  save: { label: '목록에 저장', color: '#0E9384' },
+  download: { label: '영상 다운로드', color: '#C83F55' }   // 목록에 담고 페이지 안에 다운로드 목록창을 띄움
 };
-export const MODIFIERS = { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt' };
-export const RULE_COLORS = ['#2F6BFF', '#E8590C', '#0E9384', '#7A5AF8'];
+export const MODIFIERS = { none: '', ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt' }; // none 은 빈 문자열: 시작 안내·팝업에서 키 표시를 생략
+export const RULE_COLORS = ['#2F6BFF', '#E8590C', '#0E9384', '#7A5AF8', '#C83F55'];
+// 수정키 없는 우클릭 드래그 = 영상 다운로드 (기존 사용자에게는 background 의 onInstalled 가 한 번 추가)
+export const DOWNLOAD_RULE = { id: 'r4', enabled: true, mod: 'none', button: 'right', shape: 'box', action: 'download', color: '#C83F55' };
 
 // Collectable fields per platform. id is stable (stored in settings), label is UI text.
 export const FIELDS = {
@@ -60,7 +63,8 @@ export const DEFAULT_SETTINGS = {
   rules: [
     { id: 'r1', enabled: true, mod: 'ctrl', button: 'right', shape: 'box', action: 'copy', color: '#2F6BFF' },
     { id: 'r2', enabled: true, mod: 'shift', button: 'right', shape: 'box', action: 'tabs', color: '#E8590C' },
-    { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#0E9384' }
+    { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#0E9384' },
+    { id: 'r4', enabled: true, mod: 'none', button: 'right', shape: 'box', action: 'download', color: '#C83F55' }
   ],
   collect: 'title',            // 'link' | 'title' | 'detail'
   copyFormat: 'text',          // 'text' | 'card' | 'table'
