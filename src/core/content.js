@@ -100,7 +100,10 @@
     .dlp-bar.on { display: block; }
     .dlp-acts { display: flex; gap: 8px; align-items: center; }
     .dlp-acts .n { font-size: 12px; color: #AAAAAA; flex: 1; }
-    button.pri:disabled { opacity: .45; cursor: default; }
+    button:disabled { opacity: .45; cursor: default; }
+    button.stop { background: #7F1D1D; color: #FEE2E2; }
+    button.stop:hover { background: #991B1B; }
+    .dlp-m.stop { color: #FBBF24; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes out { to { opacity: 0; transform: translateY(6px); } }`;
 
@@ -160,6 +163,7 @@
     }
     const pc = playerCandidate();
     if (pc) out.push(pc);
+    for (const c of tiktokCandidates()) out.push(c);
     return out;
   }
   // The YouTube video player has no link on it: dragging over any part of it selects the video
@@ -189,6 +193,36 @@
     a.setAttribute('title', text(document.title).replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube$/, ''));
     const r = el.getBoundingClientRect();
     return { a, el, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height };
+  }
+  // 틱톡 피드·에피소드의 영상에는 링크(a)가 없다. 영상 요소를 감싼 id(…-<영상번호>)와 작성자 링크로 주소를 만든다.
+  function tiktokCandidates() {
+    if (!/(^|\.)tiktok\.com$/.test(location.hostname)) return [];
+    const out = [], seen = new Set();
+    for (const v of document.querySelectorAll('video')) {
+      const r = v.getBoundingClientRect();
+      if (r.width < 40 || r.height < 40) continue;
+      let id = '', el = v;
+      for (let i = 0; i < 10 && el; i++) {
+        const m = el.id && String(el.id).match(/(\d{15,})/);
+        if (m) { id = m[1]; break; }
+        el = el.parentElement;
+      }
+      if (!id) { const m = location.pathname.match(/\/video\/(\d{15,})/); if (m) id = m[1]; }
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const box = v.closest('article, [data-e2e="recommend-list-item-container"]') || v.parentElement;
+      let user = '';
+      const au = box && box.querySelector('a[href^="/@"], a[href*="tiktok.com/@"]');
+      if (au) { const m = String(au.getAttribute('href')).match(/\/@([^/?#]+)/); if (m) user = m[1]; }
+      if (!user) { const m = location.pathname.match(/^\/@([^/?#]+)/); if (m) user = m[1]; }
+      const desc = box && box.querySelector('[data-e2e="video-desc"], [data-e2e="browse-video-desc"], h1');
+      const a = document.createElement('a');
+      a.href = 'https://www.tiktok.com/@' + (user || '_') + '/video/' + id;
+      a.setAttribute('title', text(desc ? desc.innerText : '') || (user ? '@' + user + ' 틱톡 영상' : '틱톡 영상'));
+      if (v.poster) { const im = document.createElement('img'); im.src = v.poster; a.appendChild(im); }
+      out.push({ a, el: v, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
+    }
+    return out;
   }
   function refreshRects() {
     if (!drag) return;
@@ -452,6 +486,7 @@
     const targets = [...document.querySelectorAll('a[href]')].map((a) => [a, a.href]);
     const vurl = currentVideoUrl(), pel = vurl && playerEl();
     if (pel) targets.push([pel, vurl]); // the player stands for the video being watched
+    for (const c of tiktokCandidates()) targets.push([c.el, c.a.href]); // 틱톡 영상 요소
     for (const [a, href] of targets) {
       const k = keyOf(href);
       if (!keys.has(k)) continue;
@@ -668,11 +703,17 @@
     toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
   }
   // ---------------------------------------------------------------- 다운로드 목록창
-  // 우클릭 드래그로 고른 영상을 보여 주고, [다운로드] 를 누르면 백그라운드가 다운로더 서버 배치 API 로 보낸다.
+  // 우클릭 드래그로 고른 영상을 보여 준다.
+  //   [다운로드 N개]   체크한 새 항목을 서버로 보낸다
+  //   [선택 삭제]      체크한 항목을 목록에서 뺀다. 받는 중이면 먼저 중지한다 (서버의 받던 파일도 삭제)
+  //   [다운로드 중지]  받는 중/대기 중인 항목을 모두 중지한다 (서버의 받던 파일도 삭제)
   // 창은 한 개만 두고, 새로 드래그하면 목록에 이어 붙는다. 진행률은 2초마다 갱신.
-  let dlp = null; // { el, items: Map(url → {link, row}), job, timer, tone }
+  let dlp = null; // { el, items: Map(key → item), timer, tone, toasted:Set }  item = { link, row, taskId, batchId, status, progress }
   const escH = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const MODE_LABEL = { both: '영상+음성', video: '영상만', audio: '음성만' };
+  const DL_DONE = { completed: 1, error: 1, failed: 1, cancelled: 1 };
+  const dlSent = (it) => !!it.taskId;
+  const dlRunning = (it) => dlSent(it) && !DL_DONE[it.status];
   function dlWhere() {
     const dl = settings.dl || {};
     return `저장 위치: ${dl.saveDir || '서버 기본 폴더'} · ${MODE_LABEL[dl.mode] || '영상+음성'}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`;
@@ -689,69 +730,166 @@
     row.innerHTML = `<input type="checkbox" checked><span class="dlp-th" style="${link.thumb ? `background-image:url(&quot;${escH(link.thumb)}&quot;)` : ''}"></span><span><div class="dlp-t">${escH(link.title || link.url)}</div><div class="dlp-m">${escH((link.domain || '').replace(/^www\./, ''))}</div></span>`;
     return row;
   }
-  function dlUpdateCount() {
-    if (!dlp || dlp.job) return;
-    const n = [...dlp.items.values()].filter((it) => it.row.querySelector('input').checked).length;
-    dlp.el.querySelector('.dlp-acts .n').textContent = `${dlp.items.size}개 중 ${n}개 선택`;
-    const b = dlp.el.querySelector('button.pri'); b.textContent = `다운로드 ${n}개`; b.disabled = !n;
+  const dlChecked = (it) => it.row.querySelector('input').checked;
+
+  // 버튼·요약·진행 막대를 현재 상태에 맞게 다시 그린다
+  function dlRefresh() {
+    if (!dlp) return;
+    const all = [...dlp.items.values()];
+    const fresh = all.filter((it) => !dlSent(it));
+    const sent = all.filter(dlSent);
+    const running = sent.filter(dlRunning);
+    const checked = all.filter(dlChecked);
+    const toSend = fresh.filter(dlChecked);
+    const q = (sel) => dlp.el.querySelector(sel);
+    const n = (st) => sent.filter((it) => it.status === st).length;
+    const failed = n('error') + n('failed');
+
+    let line = '';
+    if (sent.length) {
+      const pct = Math.round(sent.reduce((a, it) => a + (it.status === 'completed' ? 100 : (it.progress || 0)), 0) / sent.length);
+      q('.dlp-bar span').style.width = Math.min(100, pct) + '%';
+      const tail = (failed ? ` · 실패 ${failed}` : '') + (n('cancelled') ? ` · 중지 ${n('cancelled')}` : '');
+      line = running.length ? `다운로드 중 ${pct}% · 완료 ${n('completed')}/${sent.length}${tail}` : `완료 · 성공 ${n('completed')}개${tail}`;
+      if (fresh.length) line += ` · 새 항목 ${fresh.length}`;
+    } else {
+      line = `${all.length}개 중 ${toSend.length}개 선택`;
+    }
+    q('.dlp-acts .n').textContent = line;
+    q('.dlp-bar').classList.toggle('on', sent.length > 0);
+
+    const go = q('button.pri'), del = q('button.del'), stop = q('button.stop'), cfg = q('button.cfg');
+    go.style.display = fresh.length ? '' : 'none';
+    go.textContent = `${sent.length ? '추가 ' : ''}다운로드 ${toSend.length}개`;
+    go.disabled = !toSend.length || dlp.sending;
+    stop.style.display = running.length ? '' : 'none';
+    del.disabled = !checked.length;
+    del.textContent = checked.length ? `선택 삭제 ${checked.length}` : '선택 삭제';
+    cfg.style.display = sent.length ? 'none' : '';
   }
+
   function openDlPanel(links, tone) {
     ensureOverlay();
-    if (!dlp || dlp.job) {
-      if (dlp) closeDlPanel();
+    if (!dlp) {
       const el = document.createElement('div');
       el.className = 'dlp';
       el.style.setProperty('--tone', tone || '#C83F55');
       el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
         <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
-          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="pri">다운로드</button></div></div>`;
+          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요. 받는 중이면 중지하고 서버의 받던 파일도 지워요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></div></div>`;
       el.querySelector('.x').addEventListener('click', closeDlPanel);
       el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
       el.querySelector('.pri').addEventListener('click', startDl);
-      el.addEventListener('change', dlUpdateCount);
+      el.querySelector('.del').addEventListener('click', deleteChecked);
+      el.querySelector('.stop').addEventListener('click', stopAll);
+      el.addEventListener('change', dlRefresh);
       el.addEventListener('mousedown', (e) => e.stopPropagation(), true); // 창 안에서 드래그가 시작되지 않게
       el.addEventListener('contextmenu', (e) => e.stopPropagation(), true);
       toastWrap.parentNode.appendChild(el);
-      dlp = { el, items: new Map(), job: null, timer: 0, tone };
+      dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false };
     }
     const list = dlp.el.querySelector('.dlp-list');
     for (const l of links) {
       const k = keyOf(l.url);
       if (dlp.items.has(k)) continue;
-      const row = dlRow(l); list.appendChild(row); dlp.items.set(k, { link: l, row });
+      const row = dlRow(l); list.appendChild(row);
+      dlp.items.set(k, { link: l, row, taskId: '', batchId: '', status: '', progress: 0 });
     }
-    dlUpdateCount();
+    dlRefresh();
   }
+
   async function startDl() {
-    if (!dlp || dlp.job) return;
-    const picked = [...dlp.items.values()].filter((it) => it.row.querySelector('input').checked);
+    if (!dlp || dlp.sending) return;
+    const picked = [...dlp.items.values()].filter((it) => !dlSent(it) && dlChecked(it));
     if (!picked.length) return;
-    const btn = dlp.el.querySelector('button.pri'); btn.disabled = true; btn.textContent = '보내는 중…';
+    dlp.sending = true; dlRefresh();
+    dlp.el.querySelector('button.pri').textContent = '보내는 중…';
     const r = await send({ type: 'pl:dlBatch', urls: picked.map((it) => it.link.url), referer: location.href });
     if (!dlp) return;
+    dlp.sending = false;
     if (!r || !r.ok) {
-      btn.disabled = false; btn.textContent = `다운로드 ${picked.length}개`;
+      dlRefresh();
       toast({ tone: '#F04438', error: true, title: (r && r.message) || '다운로드를 시작하지 못했어요', sub: '설정 › 영상 다운로드에서 서버 주소를 확인하세요', actions: [{ label: '설정 열기', run: () => send({ type: 'pl:openOptions' }) }] });
       return;
     }
-    // 진행 모드: 체크 안 한 행은 지우고, 체크박스는 잠근다
-    for (const [k, it] of dlp.items) { if (!picked.includes(it)) { it.row.remove(); dlp.items.delete(k); } else it.row.querySelector('input').disabled = true; }
-    dlp.job = r.batch;
-    dlp.el.querySelector('.dlp-bar').classList.add('on');
-    dlp.el.querySelector('.cfg').style.display = 'none';
-    btn.textContent = '닫기'; btn.disabled = false; btn.onclick = closeDlPanel;
-    btn.removeEventListener('click', startDl);
-    dlRender(r.batch);
+    // 보낸 항목은 체크를 풀어 둔다: 이후의 체크는 "삭제할 항목 고르기"
+    for (const it of picked) { it.batchId = r.batch.batch_id; it.row.querySelector('input').checked = false; }
+    dlApply(r.batch);
+    clearTimeout(dlp.timer);
     dlp.timer = setTimeout(dlPoll, 1500);
   }
-  async function dlPoll() {
-    if (!dlp || !dlp.job) return;
-    const r = await send({ type: 'pl:dlStatus', id: dlp.job.batch_id });
-    if (!dlp) return;
-    if (r && r.ok) { dlp.job = r.batch; dlRender(r.batch); }
-    if (dlp.job.status !== 'done') dlp.timer = setTimeout(dlPoll, 2000);
+
+  // 서버가 돌려준 배치 상태를 행에 반영
+  function dlApply(b) {
+    if (!dlp || !b) return;
+    for (const s of b.items || []) {
+      const it = dlp.items.get(keyOf(s.url));
+      if (!it) continue;
+      it.taskId = s.task_id; it.batchId = b.batch_id; it.status = s.status; it.progress = s.progress || 0;
+      const m = it.row.querySelector('.dlp-m');
+      if (s.status === 'completed') { m.className = 'dlp-m ok'; m.textContent = '완료' + (s.file_path ? ' · ' + s.file_path.split(/[\\/]/).pop() : ''); }
+      else if (s.status === 'error' || s.status === 'failed') { m.className = 'dlp-m err'; m.textContent = '실패 · ' + (s.error || ''); m.title = s.error || ''; }
+      else if (s.status === 'cancelled') { m.className = 'dlp-m stop'; m.textContent = '중지됨 · 받던 파일 삭제'; }
+      else if (s.status === 'downloading' || s.status === 'processing') { m.className = 'dlp-m run'; m.textContent = `${Math.round(s.progress || 0)}%` + (s.status_msg ? ' · ' + s.status_msg : ''); }
+      else { m.className = 'dlp-m'; m.textContent = '대기 중'; }
+    }
+    dlFetchDone(b);
+    dlRefresh();
+    if (b.status === 'done' && !dlp.toasted.has(b.batch_id)) {
+      dlp.toasted.add(b.batch_id);
+      const c = b.counts || {};
+      const bad = (c.error || 0), stopped = (c.cancelled || 0);
+      const title = bad ? `다운로드 끝 · 성공 ${c.completed || 0}개, 실패 ${bad}개` : stopped ? `다운로드 중지 · 성공 ${c.completed || 0}개, 중지 ${stopped}개` : `영상 ${c.completed || 0}개를 다운로드했어요`;
+      toast({ tone: bad ? '#F04438' : dlp.tone, error: !!bad, title, sub: (settings.dl && settings.dl.saveDir) || '서버 기본 폴더' });
+    }
   }
+
+  async function dlPoll() {
+    if (!dlp) return;
+    const ids = [...new Set([...dlp.items.values()].filter(dlRunning).map((it) => it.batchId).filter(Boolean))];
+    for (const id of ids) {
+      const r = await send({ type: 'pl:dlStatus', id });
+      if (!dlp) return;
+      if (r && r.ok) dlApply(r.batch);
+    }
+    if ([...dlp.items.values()].some(dlRunning)) dlp.timer = setTimeout(dlPoll, 2000);
+  }
+
+  // 배치별로 묶어 서버에 중지를 요청한다
+  async function dlCancel(items) {
+    const by = new Map();
+    for (const it of items) { if (!by.has(it.batchId)) by.set(it.batchId, []); by.get(it.batchId).push(it.taskId); }
+    for (const [id, taskIds] of by) {
+      const r = await send({ type: 'pl:dlCancel', id, taskIds });
+      if (!dlp) return;
+      if (r && r.ok) dlApply(r.batch);
+      else toast({ tone: '#F04438', error: true, title: (r && r.message) || '중지하지 못했어요' });
+    }
+  }
+
+  async function stopAll() {
+    if (!dlp) return;
+    const running = [...dlp.items.values()].filter(dlRunning);
+    if (!running.length) return;
+    dlp.el.querySelector('button.stop').disabled = true;
+    await dlCancel(running);
+    if (dlp) { dlp.el.querySelector('button.stop').disabled = false; dlRefresh(); }
+  }
+
+  async function deleteChecked() {
+    if (!dlp) return;
+    const picked = [...dlp.items.entries()].filter(([, it]) => dlChecked(it));
+    if (!picked.length) return;
+    const running = picked.map(([, it]) => it).filter(dlRunning);
+    if (running.length) await dlCancel(running);   // 받는 중이면 먼저 중지 (서버가 받던 파일을 지운다)
+    if (!dlp) return;
+    for (const [k, it] of picked) { it.row.remove(); dlp.items.delete(k); }
+    unmarkUrls(new Set(picked.map(([k]) => k)));   // 페이지의 선택 테두리도 지운다
+    if (!dlp.items.size) { closeDlPanel(); return; }
+    dlRefresh();
+  }
+
   const dlFetched = new Set();
   async function dlFetchDone(b) {
     const r = await send({ type: 'pl:dlShouldFetch' });
@@ -761,25 +899,6 @@
       dlFetched.add(it.task_id);
       send({ type: 'pl:dlFetchFile', taskId: it.task_id, filename: (it.file_path || '').split(/[\\/]/).pop() });
     }
-  }
-  function dlRender(b) {
-    if (!dlp) return;
-    dlFetchDone(b);
-    const c = b.counts || {};
-    dlp.el.querySelector('.dlp-bar span').style.width = Math.min(100, Math.round(b.progress || 0)) + '%';
-    const done = b.status === 'done';
-    dlp.el.querySelector('.dlp-acts .n').textContent = done
-      ? `완료 · 성공 ${c.completed || 0}개${c.error ? ` · 실패 ${c.error}개` : ''}`
-      : `다운로드 중 ${Math.round(b.progress || 0)}% · 완료 ${c.completed || 0}/${b.total}${c.error ? ` · 실패 ${c.error}` : ''}`;
-    for (const it of b.items || []) {
-      const row = dlp.items.get(keyOf(it.url)); if (!row) continue;
-      const m = row.row.querySelector('.dlp-m');
-      if (it.status === 'completed') { m.className = 'dlp-m ok'; m.textContent = '완료' + (it.file_path ? ' · ' + it.file_path.split(/[\\/]/).pop() : ''); }
-      else if (it.status === 'error' || it.status === 'failed') { m.className = 'dlp-m err'; m.textContent = '실패 · ' + (it.error || ''); m.title = it.error || ''; }
-      else if (it.status === 'downloading' || it.status === 'processing') { m.className = 'dlp-m run'; m.textContent = `${Math.round(it.progress || 0)}%` + (it.status_msg ? ' · ' + it.status_msg : ''); }
-      else { m.className = 'dlp-m'; m.textContent = '대기 중'; }
-    }
-    if (done) toast({ tone: c.error ? '#F04438' : dlp.tone, error: !!c.error, title: c.error ? `다운로드 끝 · 성공 ${c.completed || 0}개, 실패 ${c.error}개` : `영상 ${c.completed || 0}개를 다운로드했어요`, sub: (settings.dl && settings.dl.saveDir) || '서버 기본 폴더' });
   }
 
   async function writeClip(text, html) {

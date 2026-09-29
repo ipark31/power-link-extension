@@ -637,6 +637,12 @@ const handlers = {
     return { ok: true, batch, message: `${batch.total}개 다운로드를 시작했어요` };
   },
   'pl:openOptions': async () => { await chrome.runtime.openOptionsPage(); return { ok: true }; },
+  // 다운로드 중지 → { ok, batch }. taskIds 를 주면 그 항목만, 없으면 끝나지 않은 항목 전부. 서버가 받던 파일을 지운다
+  'pl:dlCancel': async (msg) => {
+    const body = Array.isArray(msg.taskIds) && msg.taskIds.length ? { task_ids: msg.taskIds } : {};
+    const batch = await dlFetch('/batch/' + encodeURIComponent(msg.id) + '/cancel', { method: 'POST', body: JSON.stringify(body) });
+    return { ok: true, batch };
+  },
   // 배치 진행 상태 → { ok, batch }
   'pl:dlStatus': async (msg) => ({ ok: true, batch: await dlFetch('/batch/' + encodeURIComponent(msg.id)) }),
 
