@@ -539,13 +539,34 @@ async function checkWatchlist() {
 // ------------------------------------------------------------------ message router
 // ------------------------------------------------------------------ 영상 다운로더 연동
 // universal-downloader 서버의 배치 API. 사이드바/팝업이 URL 목록만 넘기면 서버가 정한 폴더에 받는다.
-const dlBase = (s) => String((s && s.dl && s.dl.server) || 'http://localhost:8000/api').trim().replace(/\/+$/, '');
+const DL_DEFAULT = 'http://localhost:8000/api';
+// 기본값일 때 차례로 확인할 주소. 구 버전 서버(8000)에는 일괄 다운로드 API 가 없어 새 서버(8020)를 따로 띄워 쓰는 경우가 있다
+const DL_CANDIDATES = ['http://localhost:8000/api', 'http://localhost:8020/api'];
+const dlSet = (s) => String((s && s.dl && s.dl.server) || '').trim().replace(/\/+$/, '');
+let dlPicked = null; // { base, at } 자동으로 찾은 서버 (5분 기억)
+async function dlHasBatch(base, key) {
+  try {
+    const r = await fetch(base + '/batch', { headers: key ? { 'X-API-Key': key } : {}, signal: AbortSignal.timeout(2500) });
+    return r.ok || r.status === 401; // 401 = API 는 있고 키가 필요한 서버
+  } catch (e) { return false; }
+}
+// 실제로 쓸 서버 주소. 사용자가 주소를 바꿨으면 그대로, 기본값이면 자동으로 찾는다
+async function dlBase(s) {
+  const set = dlSet(s);
+  if (set && set !== DL_DEFAULT) return set;
+  if (dlPicked && Date.now() - dlPicked.at < 5 * 60 * 1000) return dlPicked.base;
+  for (const b of DL_CANDIDATES) {
+    if (await dlHasBatch(b, dlKey(s))) { dlPicked = { base: b, at: Date.now() }; return b; }
+  }
+  dlPicked = null;
+  return DL_DEFAULT;
+}
 const dlKey = (s) => String((s && s.dl && s.dl.apiKey) || '').trim();
 const isLocalServer = (base) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(base);
 // 완료 파일을 내 PC 로 가져올지: auto = 서버가 이 PC(localhost)가 아닐 때
-const shouldFetch = (s) => { const f = (s.dl && s.dl.fetch) || 'auto'; return f === 'on' || (f === 'auto' && !isLocalServer(dlBase(s))); };
+const shouldFetch = async (s) => { const f = (s.dl && s.dl.fetch) || 'auto'; return f === 'on' || (f === 'auto' && !isLocalServer(await dlBase(s))); };
 // 브라우저가 직접 여는 URL (chrome.downloads) — 키는 ?key= 로
-const dlFileUrl = (s, taskId) => `${dlBase(s)}/download_file/${encodeURIComponent(taskId)}?cleanup=1${dlKey(s) ? '&key=' + encodeURIComponent(dlKey(s)) : ''}`;
+const dlFileUrl = async (s, taskId) => `${await dlBase(s)}/download_file/${encodeURIComponent(taskId)}?cleanup=1${dlKey(s) ? '&key=' + encodeURIComponent(dlKey(s)) : ''}`;
 async function dlFetch(path, init) {
   const settings = await getSettings();
   const ctl = new AbortController();
@@ -553,7 +574,8 @@ async function dlFetch(path, init) {
   try {
     const headers = Object.assign({ 'Content-Type': 'application/json' }, (init && init.headers) || {});
     if (dlKey(settings)) headers['X-API-Key'] = dlKey(settings);
-    const res = await fetch(dlBase(settings) + path, Object.assign({ signal: ctl.signal }, init, { headers }));
+    const base = await dlBase(settings);
+    const res = await fetch(base + path, Object.assign({ signal: ctl.signal }, init, { headers }));
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text.slice(0, 200) }; }
@@ -562,7 +584,7 @@ async function dlFetch(path, init) {
     return data;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('다운로더 서버가 응답하지 않아요');
-    if (/Failed to fetch|NetworkError/i.test(e.message)) throw new Error(`다운로더 서버(${dlBase(settings)})에 연결할 수 없어요`);
+    if (/Failed to fetch|NetworkError/i.test(e.message)) { dlPicked = null; throw new Error('다운로더 서버에 연결할 수 없어요. 서버가 켜져 있는지 확인하세요'); }
     throw e;
   } finally { clearTimeout(timer); }
 }
@@ -572,13 +594,17 @@ const handlers = {
   'pl:dlHealth': async (msg) => {
     try {
       const prev = await getSettings();
-      const server = msg.server ? String(msg.server).trim().replace(/\/+$/, '') : dlBase(prev);
+      const typed = msg.server ? String(msg.server).trim().replace(/\/+$/, '') : '';
+      // 입력 칸이 기본값이면 자동으로 찾은 서버를 확인한다
+      if (!typed || typed === DL_DEFAULT) dlPicked = null;
+      const server = typed && typed !== DL_DEFAULT ? typed : await dlBase(prev);
       const key = msg.apiKey !== undefined ? String(msg.apiKey).trim() : dlKey(prev);
       const res = await fetch(server + '/health', { signal: AbortSignal.timeout(6000), headers: key ? { 'X-API-Key': key } : {} });
       const j = await res.json();
       if (!j || j.status !== 'ok') return { ok: false, message: '서버 응답이 올바르지 않아요' };
       if (j.auth && !j.key_ok) return { ok: false, auth: true, message: key ? 'API 키가 맞지 않아요' : '이 서버는 API 키가 필요해요' };
-      return { ok: true, auth: !!j.auth, message: j.auth ? '연결됐어요 (API 키 확인)' : '연결됐어요' };
+      const where = server.replace(/^https?:\/\//, '').replace(/\/api$/, '');
+      return { ok: true, auth: !!j.auth, server, message: (j.auth ? '연결됐어요 (API 키 확인)' : '연결됐어요') + ' · ' + where };
     } catch (e) { return { ok: false, message: '연결할 수 없어요 — 서버가 꺼져 있거나 주소가 달라요' }; }
   },
   // 완료된 파일을 내 PC 다운로드 폴더로 (원격 서버). 전송이 끝나면 서버 보관본은 cleanup=1 로 지워진다.
@@ -587,11 +613,12 @@ const handlers = {
     if (!msg.taskId) return { ok: false };
     const name = String(msg.filename || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
     const sub = 'PowerLink/';
-    const id = await new Promise((resolve) => chrome.downloads.download({ url: dlFileUrl(s, msg.taskId), filename: name ? sub + name : undefined, conflictAction: 'uniquify' }, (i) => resolve(chrome.runtime.lastError ? null : i)));
+    const fileUrl = await dlFileUrl(s, msg.taskId);
+    const id = await new Promise((resolve) => chrome.downloads.download({ url: fileUrl, filename: name ? sub + name : undefined, conflictAction: 'uniquify' }, (i) => resolve(chrome.runtime.lastError ? null : i)));
     return { ok: !!id, id };
   },
   // 이 설정이면 완료 파일을 가져와야 하는지 (사이드바·페이지 목록창이 묻는다)
-  'pl:dlShouldFetch': async () => ({ ok: true, fetch: shouldFetch(await getSettings()) }),
+  'pl:dlShouldFetch': async () => ({ ok: true, fetch: await shouldFetch(await getSettings()) }),
   // URL 목록 일괄 다운로드 시작 → { ok, batch }
   'pl:dlBatch': async (msg) => {
     const s = await getSettings();

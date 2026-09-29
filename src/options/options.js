@@ -214,7 +214,7 @@ function viewDownload() {
   return `
   <section class="pl-card pl-card--pad">
     <div style="display:flex;align-items:center;gap:12px;">
-      <div class="pl-grow"><div class="pl-h2">다운로더 서버 주소</div><p class="pl-desc" style="margin-top:4px;">universal-downloader 서버의 API 주소예요. 서버를 클라우드로 옮기면 이 주소만 바꾸면 돼요.</p></div>
+      <div class="pl-grow"><div class="pl-h2">다운로더 서버 주소</div><p class="pl-desc" style="margin-top:4px;">universal-downloader 서버의 API 주소예요. 기본값이면 이 PC 의 서버(8000, 8020)를 자동으로 찾아요. 클라우드 서버는 주소를 직접 넣으세요.</p></div>
       <span class="pl-caption" style="display:inline-flex;align-items:center;">${dot}</span>
     </div>
     <div style="display:flex;gap:8px;">
