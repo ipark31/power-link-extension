@@ -111,6 +111,7 @@ chrome.runtime.onStartup.addListener(() => { seedRecent().catch(() => {}); });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'pl-watch') checkWatchlist().catch(() => {});
   if (a.name === 'pl-bridge' && !bridgePort) bridgeConnect();
+  if (a.name === 'pl-dl') dlSweep().catch(() => {});
 });
 
 // ------------------------------------------------------------------ profile bridge
@@ -597,6 +598,71 @@ async function dlFetch(path, init) {
   } finally { clearTimeout(timer); }
 }
 
+// ---- 받은 파일 전달: 백그라운드가 맡는다 -------------------------------------------
+// 목록창이 닫히거나 페이지를 떠나도, 브라우저를 다시 켜도 다 받은 파일은 다운로드 폴더로 온다.
+//  - 진행 중인 배치 id 와 이미 전달한 작업 id 를 chrome.storage.local 에 기억
+//  - 목록창이 상태를 물을 때마다, 그리고 30초마다(알람) 확인해서 전달
+const DL_ACTIVE = 'pl_dlActive';       // [batchId]
+const DL_DELIVERED = 'pl_dlDelivered'; // [taskId] 최근 300개
+const dlDelivering = new Set();        // 같은 파일을 동시에 두 번 보내지 않게 (메모리)
+const dlGet = async (k) => { const v = (await chrome.storage.local.get(k))[k]; return Array.isArray(v) ? v : []; };
+
+async function dlTrack(batchId) {
+  const a = await dlGet(DL_ACTIVE);
+  if (!a.includes(batchId)) { a.push(batchId); await chrome.storage.local.set({ [DL_ACTIVE]: a.slice(-50) }); }
+  chrome.alarms.create('pl-dl', { periodInMinutes: 0.5 });
+}
+async function dlUntrack(batchId) {
+  const a = (await dlGet(DL_ACTIVE)).filter((x) => x !== batchId);
+  await chrome.storage.local.set({ [DL_ACTIVE]: a });
+  if (!a.length) chrome.alarms.clear('pl-dl');
+}
+const dlCleanName = (path) => String(path || '').split(/[\\/]/).pop()
+  .replace(/^\d{8}_\d{6}_[0-9a-f]{8}_/, '').replace(/^\d{8}_/, '')
+  .replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+
+async function dlSaveFile(s, taskId, filePath) {
+  if (!taskId || dlDelivering.has(taskId)) return false;
+  dlDelivering.add(taskId);
+  try {
+    const done = await dlGet(DL_DELIVERED);
+    if (done.includes(taskId)) return false;
+    const name = dlCleanName(filePath);
+    const url = await dlFileUrl(s, taskId);
+    const id = await new Promise((resolve) => chrome.downloads.download(
+      { url, filename: name ? 'PowerLink/' + name : undefined, conflictAction: 'uniquify' },
+      (i) => resolve(chrome.runtime.lastError ? null : i)));
+    if (!id) return false;
+    done.push(taskId);
+    await chrome.storage.local.set({ [DL_DELIVERED]: done.slice(-300) });
+    return true;
+  } finally { dlDelivering.delete(taskId); }
+}
+
+// 배치 상태를 보고 다 받은 항목을 전달한다. 배치가 끝났으면 추적을 그만둔다
+async function dlDeliver(batch) {
+  if (!batch || !Array.isArray(batch.items)) return;
+  const s = await getSettings();
+  if (await shouldFetch(s)) {
+    for (const it of batch.items) {
+      if (it.status === 'completed' && it.task_id) await dlSaveFile(s, it.task_id, it.file_path);
+    }
+  }
+  if (batch.status === 'done') await dlUntrack(batch.batch_id);
+}
+
+// 추적 중인 배치를 모두 확인 (알람, 확장이 깨어날 때)
+async function dlSweep() {
+  for (const id of await dlGet(DL_ACTIVE)) {
+    try {
+      await dlDeliver(await dlFetch('/batch/' + encodeURIComponent(id)));
+    } catch (e) {
+      // 서버가 다시 켜져 배치가 사라졌으면(찾을 수 없음) 추적을 그만둔다. 서버가 꺼져 있으면 다음에 다시 확인
+      if (/not found/i.test(String(e && e.message))) await dlUntrack(id);
+    }
+  }
+}
+
 const handlers = {
   // 다운로더 서버 연결 확인 → { ok, message }
   'pl:dlHealth': async (msg) => {
@@ -617,16 +683,8 @@ const handlers = {
   },
   // 완료된 파일을 내 PC 다운로드 폴더로 (원격 서버). 전송이 끝나면 서버 보관본은 cleanup=1 로 지워진다.
   'pl:dlFetchFile': async (msg) => {
-    const s = await getSettings();
     if (!msg.taskId) return { ok: false };
-    // 서버 파일명 앞의 날짜·시각·작업번호(예: 20260930_032342_f2b51df7_)는 저장할 때 뗀다
-    const name = String(msg.filename || '')
-      .replace(/^\d{8}_\d{6}_[0-9a-f]{8}_/, '').replace(/^\d{8}_/, '')
-      .replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
-    const sub = 'PowerLink/';
-    const fileUrl = await dlFileUrl(s, msg.taskId);
-    const id = await new Promise((resolve) => chrome.downloads.download({ url: fileUrl, filename: name ? sub + name : undefined, conflictAction: 'uniquify' }, (i) => resolve(chrome.runtime.lastError ? null : i)));
-    return { ok: !!id, id };
+    return { ok: await dlSaveFile(await getSettings(), msg.taskId, msg.filename) };
   },
   // 이 설정이면 완료 파일을 가져와야 하는지 (사이드바·페이지 목록창이 묻는다)
   'pl:dlShouldFetch': async () => ({ ok: true, fetch: await shouldFetch(await getSettings()) }),
@@ -645,6 +703,7 @@ const handlers = {
       referer: msg.referer || null
     };
     const batch = await dlFetch('/batch', { method: 'POST', body: JSON.stringify(body) });
+    await dlTrack(batch.batch_id);
     return { ok: true, batch, message: `${batch.total}개 다운로드를 시작했어요` };
   },
   'pl:openOptions': async () => { await chrome.runtime.openOptionsPage(); return { ok: true }; },
@@ -652,10 +711,15 @@ const handlers = {
   'pl:dlCancel': async (msg) => {
     const body = Array.isArray(msg.taskIds) && msg.taskIds.length ? { task_ids: msg.taskIds } : {};
     const batch = await dlFetch('/batch/' + encodeURIComponent(msg.id) + '/cancel', { method: 'POST', body: JSON.stringify(body) });
+    dlDeliver(batch).catch(() => {});
     return { ok: true, batch };
   },
   // 배치 진행 상태 → { ok, batch }
-  'pl:dlStatus': async (msg) => ({ ok: true, batch: await dlFetch('/batch/' + encodeURIComponent(msg.id)) }),
+  'pl:dlStatus': async (msg) => {
+    const batch = await dlFetch('/batch/' + encodeURIComponent(msg.id));
+    dlDeliver(batch).catch(() => {});
+    return { ok: true, batch };
+  },
 
   'pl:grab': async (msg, sender) => runAction({ action: msg.action, links: msg.links || [], sourceTab: sender.tab, source: 'grab' }),
 
@@ -794,4 +858,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // module init runs on every service-worker start — reconnect to the helper right away
 bridgeConnect();
+// 받다 만 배치가 있으면 확인해서 다 받은 파일을 전달한다
+dlSweep().catch(() => {});
 

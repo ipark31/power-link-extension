@@ -84,6 +84,7 @@
     .dlp-h .tt { flex: 1; }
     .dlp-h .x { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
     .dlp-h .x:hover { background: #272727; color: #F1F1F1; }
+    .dlp-h .x:disabled { opacity: .3; cursor: not-allowed; background: none; }
     .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
     .dlp-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
     .dlp-row { display: grid; grid-template-columns: 18px 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
@@ -732,6 +733,7 @@
   }
   function closeDlPanel() {
     if (!dlp) return;
+    if (dlp.sending || [...dlp.items.values()].some(dlRunning)) return; // 받는 중에는 닫지 않는다
     clearTimeout(dlp.timer);
     const el = dlp.el; dlp = null;
     el.classList.add('out'); setTimeout(() => el.remove(), 200);
@@ -798,6 +800,8 @@
     del.disabled = busy || !checked.length;
     del.textContent = !busy && checked.length ? `선택 삭제 ${checked.length}` : '선택 삭제';
     cfg.disabled = busy;
+    // 받는 중에는 창을 닫을 수 없다 (닫으면 진행 상황과 중지 버튼이 사라진다)
+    const x = q('.x'); x.disabled = busy; x.title = busy ? '받는 중에는 닫을 수 없어요. 멈추려면 다운로드 중지를 누르세요' : '';
   }
 
   function openDlPanel(links, tone) {
@@ -860,8 +864,7 @@
       it.taskId = s.task_id; it.batchId = b.batch_id; it.status = s.status; it.progress = s.progress || 0;
       dlPaint(it, s);
     }
-    dlFetchDone(b);
-    dlRefresh();
+    dlRefresh();   // 다 받은 파일의 전달은 백그라운드가 맡는다 (이 창이 닫혀도 전달됨)
     if (b.status === 'done' && !dlp.toasted.has(b.batch_id)) {
       dlp.toasted.add(b.batch_id);
       const c = b.counts || {};
@@ -913,17 +916,6 @@
     unmarkUrls(new Set(picked.map(([k]) => k)));   // 페이지의 선택 테두리도 지운다
     if (!dlp.items.size) { closeDlPanel(); return; }
     dlRefresh();
-  }
-
-  const dlFetched = new Set();
-  async function dlFetchDone(b) {
-    const r = await send({ type: 'pl:dlShouldFetch' });
-    if (!r || !r.fetch) return;
-    for (const it of b.items || []) {
-      if (it.status !== 'completed' || dlFetched.has(it.task_id)) continue;
-      dlFetched.add(it.task_id);
-      send({ type: 'pl:dlFetchFile', taskId: it.task_id, filename: (it.file_path || '').split(/[\\/]/).pop() });
-    }
   }
 
   async function writeClip(text, html) {
