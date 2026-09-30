@@ -127,7 +127,6 @@
     .dlp-m.host { flex-shrink: 1; min-width: 0; }
     .dlp-m.ok { color: var(--ok); } .dlp-m.err { color: var(--err); } .dlp-m.run { color: var(--text); }
     .dlp-f { padding: 10px 12px 12px; border-top: 1px solid var(--divider); display: flex; flex-direction: column; gap: 8px; }
-    .dlp-where { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dlp-bar { height: 4px; border-radius: 2px; background: var(--chip); overflow: hidden; display: none; }
     .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
     .dlp-bar.on { display: block; }
@@ -770,16 +769,9 @@
   // 창은 한 개만 두고, 새로 드래그하면 목록에 이어 붙는다. 진행률은 2초마다 갱신.
   let dlp = null; // { el, items: Map(key → item), timer, tone, toasted:Set, sending }  item = { link, row, taskId, batchId, status, progress }
   const escH = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const MODE_LABEL = { both: '영상+음성', video: '영상만', audio: '음성만' };
   const DL_DONE = { completed: 1, error: 1, failed: 1, cancelled: 1 };
   const dlSent = (it) => !!it.taskId;
   const dlRunning = (it) => dlSent(it) && !DL_DONE[it.status];
-  function dlWhere() {
-    const dl = settings.dl || {};
-    // 저장 폴더를 정하지 않았으면 다 받은 뒤 크롬 다운로드 폴더의 PowerLink 로 가져온다 (가져오기를 끈 경우만 서버 폴더에 남음)
-    const where = dl.saveDir || (dl.fetch === 'off' ? '서버 폴더' : '다운로드 폴더 › PowerLink');
-    return `저장 위치: ${where} · ${MODE_LABEL[dl.mode] || '영상+음성'}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`;
-  }
   function closeDlPanel() {
     if (!dlp) return;
     if (dlp.sending || [...dlp.items.values()].some(dlRunning)) return; // 받는 중에는 닫지 않는다
@@ -866,7 +858,7 @@
       el.style.setProperty('--tone', tone || '#C83F55');
       el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="lst" aria-label="목록 보기" title="수집 링크 목록 보기 (사이드바 열기)"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
-        <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
+        <div class="dlp-f"><div class="dlp-bar"><span></span></div>
           <div class="dlp-acts"><span class="n"></span><span class="dlp-btns"><button type="button" class="add" title="체크한 영상을 수집 링크 목록에 저장해요">목록에 추가</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></span></div></div>`;
       el.querySelector('.x').addEventListener('click', closeDlPanel);
       el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
