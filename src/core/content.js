@@ -42,7 +42,18 @@
   // ---------------------------------------------------------------- overlay (shadow DOM)
   let host = null, root = null, layer = null, svg = null, pathEl = null, boxEl = null, pill = null, hlLayer = null, toastWrap = null;
   const CSS = `
-    :host { all: initial; }
+    /* Colours are tokens so the overlay can follow the extension's theme (chrome.storage.local 'pl_theme', same as src/ui/theme.js).
+       The host carries data-theme="dark|light". Defaults are the dark values. The light values apply to the download panel and the
+       confirm dialog only: toasts and the drag pill stay dark in both themes, like the side panel's bottom bar. */
+    :host { all: initial;
+      --bg: #0F0F0F; --text: #F1F1F1; --text2: #D0D0D0; --muted: #AAAAAA; --border: #303030; --divider: #262626; --chip: #272727;
+      --sunken: #1F1F1F; --hover: #1A1A1A; --track: #2A2A2A; --ink: #F1F1F1; --on-ink: #0F0F0F; --ok: #4ADE80; --err: #F87171; --warn: #FBBF24;
+      --stop-bg: #7F1D1D; --stop-text: #FEE2E2; --stop-hover: #991B1B; --sh: .45; --sh2: .6; }
+    .dlp, .modal-card { color-scheme: dark; }
+    :host([data-theme="light"]) .dlp, :host([data-theme="light"]) .modal-card { color-scheme: light;
+      --bg: #FFFFFF; --text: #0F0F0F; --text2: #3F3F3F; --muted: #606060; --border: #E5E5E5; --divider: #F0F0F0; --chip: #F2F2F2;
+      --sunken: #F7F7F7; --hover: #F5F5F5; --track: #E5E5E5; --ink: #0F0F0F; --on-ink: #FFFFFF; --ok: #0B7A3B; --err: #DC2626; --warn: #B45309;
+      --stop-bg: #DC2626; --stop-text: #FFFFFF; --stop-hover: #B91C1C; --sh: .22; --sh2: .28; }
     /* Vertical centering (checked by tests/align.mjs, which measures the text ink in pixels):
        - The first available font sets the line box. Korean fonts come first so that Hangul and Latin share one font on every site;
          with Roboto first, pages that load it (YouTube) got a different line box from pages that do not.
@@ -61,38 +72,38 @@
     .marks-doc { position: absolute; left: 0; top: 0; will-change: transform; }
     .mark { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 6%, transparent); }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
-    .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); white-space: nowrap; }
-    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px 2px; border-radius: 8px; background: #272727; font-size: 14px; line-height: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,var(--sh)); white-space: nowrap; }
+    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px 2px; border-radius: 8px; background: var(--chip); font-size: 14px; line-height: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
     .pill .t { font-size: 13px; line-height: 18px; font-weight: 500; }
-    .pill .s { font-size: 11px; color: #AAAAAA; }
+    .pill .s { font-size: 11px; color: var(--muted); }
     .toasts { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2147483647; }
-    .toast { pointer-events: auto; width: 360px; padding: 14px; border-radius: 12px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 10px; animation: in .22s cubic-bezier(.2,.8,.2,1); }
+    .toast { pointer-events: auto; width: 360px; padding: 14px; border-radius: 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); box-shadow: 0 12px 28px -10px rgba(0,0,0,var(--sh)); display: flex; flex-direction: column; gap: 10px; animation: in .22s cubic-bezier(.2,.8,.2,1); }
     .toast.out { animation: out .18s ease forwards; }
     .head { display: flex; gap: 10px; align-items: flex-start; }
     .ic { width: 22px; height: 22px; margin-top: -1px; border-radius: 50%; background: #16A34A; display: grid; place-items: center; flex-shrink: 0; }
     .toast.err .ic { background: #DC2626; }
     .ic svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
     .tt { font-size: 13px; font-weight: 500; line-height: 20px; }
-    .ts { font-size: 12px; line-height: 17px; color: #AAAAAA; margin-top: 2px; }
-    .list { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #1F1F1F; }
-    .list span { font-size: 12px; line-height: 17px; color: #D0D0D0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ts { font-size: 12px; line-height: 17px; color: var(--muted); margin-top: 2px; }
+    .list { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--sunken); }
+    .list span { font-size: 12px; line-height: 17px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .acts { display: flex; gap: 8px; justify-content: flex-end; }
-    button { display: inline-flex; align-items: center; justify-content: center; height: 31px; padding: 0 14px 1px; border-radius: 16px; font-size: 12px; line-height: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; border: 0; background: #272727; color: #F1F1F1; }
-    button.pri { background: #F1F1F1; color: #0F0F0F; }
+    button { display: inline-flex; align-items: center; justify-content: center; height: 31px; padding: 0 14px 1px; border-radius: 16px; font-size: 12px; line-height: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; border: 0; background: var(--chip); color: var(--text); }
+    button.pri { background: var(--ink); color: var(--on-ink); }
     .modal { position: fixed; inset: 0; z-index: 2147483647; pointer-events: auto; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
-    .modal-card { width: 100%; max-width: 340px; padding: 20px; border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 8px; animation: in .15s ease; }
+    .modal-card { width: 100%; max-width: 340px; padding: 20px; border-radius: 14px; background: var(--bg); color: var(--text); border: 1px solid var(--border); box-shadow: 0 12px 28px -10px rgba(0,0,0,var(--sh)); display: flex; flex-direction: column; gap: 8px; animation: in .15s ease; }
     .mt { font-size: 15px; line-height: 22px; font-weight: 500; }
-    .md { font-size: 13px; line-height: 20px; color: #D0D0D0; }
+    .md { font-size: 13px; line-height: 20px; color: var(--text2); }
     .modal .acts { margin-top: 8px; }
     /* 다운로드 목록창 (우클릭 드래그 → 영상 고르기 → 다운로드) */
     .dlp { position: fixed; right: 24px; bottom: 24px; width: 424px; max-height: min(70vh, 640px); z-index: 2147483647; pointer-events: auto; display: flex; flex-direction: column;
-           border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 16px 36px -12px rgba(0,0,0,.6); animation: in .18s ease; overflow: hidden; }
+           border-radius: 14px; background: var(--bg); color: var(--text); border: 1px solid var(--border); box-shadow: 0 16px 36px -12px rgba(0,0,0,var(--sh2)); animation: in .18s ease; overflow: hidden; }
     .dlp.out { animation: out .18s ease forwards; }
-    .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid #262626; }
+    .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid var(--divider); }
     .dlp-h .ic { background: var(--tone, #C83F55); margin-top: 0; }
     .dlp-h .tt { flex: 1; }
-    .dlp-h .x, .dlp-h .cfg, .dlp-h .lst { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
-    .dlp-h .x:hover, .dlp-h .cfg:hover, .dlp-h .lst:hover { background: #272727; color: #F1F1F1; }
+    .dlp-h .x, .dlp-h .cfg, .dlp-h .lst { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: var(--muted); display: grid; place-items: center; }
+    .dlp-h .x:hover, .dlp-h .cfg:hover, .dlp-h .lst:hover { background: var(--chip); color: var(--text); }
     .dlp-h .x:disabled, .dlp-h .cfg:disabled { opacity: .3; cursor: not-allowed; background: none; }
     .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
     .dlp-h .cfg, .dlp-h .lst { margin-right: -4px; }
@@ -104,31 +115,46 @@
     .dlp-row.lock { cursor: default; }
     .dlp-row input:disabled { cursor: default; opacity: .55; }
     .dlp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .dlp-pb { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: #2A2A2A; overflow: hidden; }
+    .dlp-pb { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
     .dlp-pb span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
-    .dlp-pb.ok span { background: #4ADE80; } .dlp-pb.err span { background: #F87171; } .dlp-pb.stop span { background: #FBBF24; }
+    .dlp-pb.ok span { background: var(--ok); } .dlp-pb.err span { background: var(--err); } .dlp-pb.stop span { background: var(--warn); }
     .dlp-pb.idle { visibility: hidden; }
-    .dlp-row:hover { background: #1A1A1A; }
+    .dlp-row:hover { background: var(--hover); }
     .dlp-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--tone, #C83F55); cursor: pointer; }
-    .dlp-th { width: 56px; height: 32px; border-radius: 6px; background: #272727 center/cover no-repeat; flex-shrink: 0; }
+    .dlp-th { width: 56px; height: 32px; border-radius: 6px; background: var(--chip) center/cover no-repeat; flex-shrink: 0; }
     .dlp-t { font-size: 12px; line-height: 16px; max-height: 32px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .dlp-m { font-size: 11px; line-height: 15px; padding-bottom: 1px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
+    .dlp-m { font-size: 11px; line-height: 15px; padding-bottom: 1px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
     .dlp-m.host { flex-shrink: 1; min-width: 0; }
-    .dlp-m.ok { color: #4ADE80; } .dlp-m.err { color: #F87171; } .dlp-m.run { color: #F1F1F1; }
-    .dlp-f { padding: 10px 12px 12px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 8px; }
-    .dlp-where { font-size: 11px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dlp-bar { height: 4px; border-radius: 2px; background: #272727; overflow: hidden; display: none; }
+    .dlp-m.ok { color: var(--ok); } .dlp-m.err { color: var(--err); } .dlp-m.run { color: var(--text); }
+    .dlp-f { padding: 10px 12px 12px; border-top: 1px solid var(--divider); display: flex; flex-direction: column; gap: 8px; }
+    .dlp-where { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-bar { height: 4px; border-radius: 2px; background: var(--chip); overflow: hidden; display: none; }
     .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
     .dlp-bar.on { display: block; }
     .dlp-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .dlp-btns { display: flex; gap: 8px; margin-left: auto; }
-    .dlp-acts .n { font-size: 12px; line-height: 12px; padding: 9px 0 10px; color: #AAAAAA; flex: 0 1 auto; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-acts .n { font-size: 12px; line-height: 12px; padding: 9px 0 10px; color: var(--muted); flex: 0 1 auto; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button:disabled { opacity: .45; cursor: default; }
-    button.stop { background: #7F1D1D; color: #FEE2E2; }
-    button.stop:hover { background: #991B1B; }
-    .dlp-m.stop { color: #FBBF24; }
+    button.stop { background: var(--stop-bg); color: var(--stop-text); }
+    button.stop:hover { background: var(--stop-hover); }
+    .dlp-m.stop { color: var(--warn); }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes out { to { opacity: 0; transform: translateY(6px); } }`;
+
+  // ---------------------------------------------------------------- theme
+  // The same choice the extension pages use (src/ui/theme.js): 'device' | 'dark' | 'light' in chrome.storage.local 'pl_theme'.
+  // Changing it in the side panel or the settings page restyles an open download panel at once.
+  let themeChoice = 'device';
+  const themeMedia = globalThis.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  function applyTheme() {
+    if (!host) return;
+    host.dataset.theme = themeChoice === 'dark' || themeChoice === 'light' ? themeChoice : themeMedia && themeMedia.matches ? 'dark' : 'light';
+  }
+  try {
+    chrome.storage.local.get('pl_theme', (r) => { if (!chrome.runtime.lastError && r) { themeChoice = r.pl_theme || 'device'; applyTheme(); } });
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.pl_theme) { themeChoice = ch.pl_theme.newValue || 'device'; applyTheme(); } });
+    if (themeMedia) themeMedia.addEventListener('change', applyTheme);
+  } catch (e) { /* extension was reloaded */ }
 
   function ensureOverlay() {
     if (host && host.isConnected) return;
@@ -144,6 +170,7 @@
     pill = root.querySelector('.pill');
     toastWrap = root.querySelector('.toasts');
     (document.documentElement || document.body).appendChild(host);
+    applyTheme();
     applyShowMarks();
   }
 

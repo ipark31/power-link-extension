@@ -2,6 +2,7 @@
 // 페이지 위 화면(다운로드 목록창, 알림, 확인 창, 드래그 안내)의 스타일을 content.js 에서 그대로 가져와 그린 뒤,
 // 화면을 4배로 찍어 글자 잉크의 실제 위·아래 끝을 픽셀로 재고, 기준(버튼 상자, 옆 아이콘)의 가운데와 비교한다.
 //   ALIGN_URL=https://www.youtube.com/  그 페이지 위에 그려서 잰다 (페이지가 불러온 글꼴의 영향을 본다)
+//   THEME=light                         밝은 테마로 그려서 잰다 (기본 dark)
 //   TOL=0.5                             허용 오차(px)
 //   OUT=파일.png                        전체 화면을 저장
 import { chromium } from 'playwright';
@@ -41,16 +42,17 @@ try {
   await helper.setContent('<canvas></canvas>');
   if (URL_) { await page.goto(URL_, { waitUntil: 'domcontentloaded' }); await wait(4000); } else await page.setContent('<!doctype html><meta charset="utf-8"><body style="margin:0;background:#fff"></body>');
   await page.bringToFront();
-  const fonts = await page.evaluate(({ css, layout, markup }) => {
+  const fonts = await page.evaluate(({ css, layout, markup, theme }) => {
     const h = document.createElement('div');
     h.setAttribute('style', 'position:fixed;left:0;top:0;z-index:2147483647;display:block;width:460px;padding:20px;background:#444');
     h.id = 'plq';
+    h.dataset.theme = theme;
     const r = h.attachShadow({ mode: 'open' });
     r.innerHTML = `<style>${css}</style><style>${layout}</style>${markup}`;
     document.documentElement.appendChild(h);
     const has = (f) => document.fonts.check(`12px "${f}"`);
     return ['Roboto', 'Noto Sans KR', 'Malgun Gothic', 'Arial'].filter(has).join(', ');
-  }, { css: CSS, layout: LAYOUT, markup: MARKUP });
+  }, { css: CSS, layout: LAYOUT, markup: MARKUP, theme: process.env.THEME || 'dark' });
   await wait(500);
   if (process.env.OUT) await page.screenshot({ path: process.env.OUT, clip: { x: 0, y: 0, width: 500, height: 1100 } });
 
