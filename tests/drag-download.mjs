@@ -1,7 +1,7 @@
 // 우클릭 드래그(수정키 없음) → 영상 다운로드 목록창 → [다운로드] 검증. 실행: node tests/drag-download.mjs
 // 다운로더 서버는 목(/batch, /batch/:id)으로 대신한다. 목록창은 닫힌 shadow root 안이라 DOM 으로 못 보므로
 // 저장소(pl_links)·목 서버가 받은 요청·화면 좌표 클릭으로 확인한다.
-// 드래그는 목록창만 띄운다. 수집 링크 목록에는 [목록에 추가] 를 눌러야 담긴다.
+// 드래그하면 박스가 생기고 수집 링크 목록에 들어가며 목록창이 뜬다. 박스를 다시 드래그하면 박스가 풀리고 목록에서 빠진다 (토글).
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -70,30 +70,34 @@ try {
   await page.mouse.up({ button: 'right' }); await wait(900);
 
   const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || []);
-  ok('드래그만으로는 수집 링크 목록에 담기지 않음 (목록창만 뜸)', (await stored()).length === 0);
+  ok('드래그 → 수집 링크 목록에 영상 3개 저장 (블로그 제외)', await until(async () => (await stored()).length === 3, 5000), (await stored()).map((l) => l.url.slice(-12)).join(','));
 
-  // 토글: 박스가 있는 영상을 다시 드래그하면 목록창에서 빠지고 박스도 지워진다. 목록창은 닫힌 shadow root 안이라
-  // 박스는 화면의 화소(첫 카드 썸네일 왼쪽 테두리)로, 목록창 내용은 [목록에 추가] 로 저장되는 개수로 확인한다.
+  // 토글: 박스를 다시 드래그하면 박스가 풀리고 수집 링크 목록에서 빠진다. 또 드래그하면 다시 들어온다.
+  // 박스는 닫힌 shadow root 안이라 화면의 화소로 본다: 테두리는 링크보다 2px 바깥에 2px 두께 (첫 카드 썸네일 x=40 → 테두리 x=36~38)
   const helper = await ctx.newPage(); await helper.setContent('<canvas></canvas>'); await page.bringToFront();
   const boxed = async () => {
-    // 박스 테두리는 링크보다 2px 바깥에 2px 두께로 그려진다 (첫 카드 썸네일은 x=40 에서 시작 → 테두리 x=36~38)
     const png = (await page.screenshot({ clip: { x: 36, y: 100, width: 2, height: 2 } })).toString('base64');
     const [r, g, b] = await helper.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.querySelector('canvas'); c.width = 2; c.height = 2; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(0, 0, 1, 1).data]; }, png);
     return r > 150 && g < 120 && b < 140;   // 규칙 색(#C83F55) 계열이면 박스가 있는 것
   };
   const dragCard1 = async () => { await page.mouse.move(30, 30); await page.mouse.down({ button: 'right' }); await page.mouse.move(150, 100, { steps: 5 }); await page.mouse.move(270, 200, { steps: 6 }); await wait(150); await page.mouse.up({ button: 'right' }); await wait(700); };
-  const addBtn = () => page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);
+  const ids = async () => (await stored()).map((l) => l.url.slice(-1)).sort().join('');
   ok('드래그한 영상에 박스가 표시됨', await boxed());
   await dragCard1();
-  ok('다시 드래그 → 박스가 지워짐', !(await boxed()));
-  await addBtn();
-  ok('다시 드래그 → 목록창에서도 빠짐 (남은 2개만 저장됨)', await until(async () => (await stored()).length === 2, 5000), (await stored()).map((l) => l.url.slice(-12)).join(','));
+  ok('박스를 다시 드래그 → 박스가 풀림', !(await boxed()));
+  ok('박스를 다시 드래그 → 수집 링크 목록에서 빠짐', await until(async () => (await ids()) === '23', 5000), await ids());
   await dragCard1();
-  ok('한 번 더 드래그 → 박스와 목록창에 다시 들어옴', await boxed());
-  // 목록창의 [목록에 추가]: 버튼 줄 오른쪽 끝에서 238px 왼쪽 (tests/align.mjs 가 잰 버튼 위치)
-  await page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);
-  ok('[목록에 추가] 클릭 → 다시 들어온 1개가 더 저장되어 3개', await until(async () => (await stored()).length === 3, 5000));
-  const links = await stored();
+  ok('한 번 더 드래그 → 박스 다시 표시', await boxed());
+  ok('한 번 더 드래그 → 수집 링크 목록에 다시 들어옴', await until(async () => (await ids()) === '123', 5000), await ids());
+
+  // 사이드바에서 링크를 지운 경우: 박스가 풀리고, 목록창의 [목록에 추가] 로 다시 넣을 수 있다
+  await sw.evaluate(async () => { const l = (await chrome.storage.local.get('pl_links')).pl_links || []; await chrome.storage.local.set({ pl_links: l.filter((x) => !x.url.endsWith('1')) }); });
+  await wait(600);
+  ok('사이드바에서 지우면 박스도 풀림', !(await boxed()) && (await ids()) === '23', await ids());
+  await page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);   // [목록에 추가]: 버튼 줄 오른쪽 끝에서 238px 왼쪽 (tests/align.mjs 가 잰 위치)
+  ok('[목록에 추가] → 목록과 박스에 다시 들어옴', await until(async () => (await ids()) === '123' && (await boxed()), 5000), await ids());
+
+  const links = (await stored()).slice().sort((a, b) => a.url.localeCompare(b.url));
   ok('목록에 영상 링크 3개가 담김 (블로그 제외)', links.length === 3 && links.every((l) => l.platform === 'yt'), links.map((l) => l.url.slice(-12)).join(','));
   ok('썸네일의 통계 배지(VPH)가 아니라 영상 제목이 담김', links.every((l, i) => l.title === '영상 제목 ' + (i + 1)), links.map((l) => l.title).join(' | '));
   ok('다운로드 요청은 아직 안 보냄', posted.length === 0);

@@ -615,9 +615,11 @@
   // side panel deleted links → drop their outlines (only outlines whose link went into the list)
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area !== 'local' || !ch.pl_links || !marks.size) return;
+      if (area !== 'local' || !ch.pl_links) return;
       const keep = new Set((ch.pl_links.newValue || []).map((l) => keyOf(l.url)));
-      unmarkUrls([...marks.entries()].filter(([k, m]) => m.saved && !keep.has(k)).map(([k]) => k));
+      if (marks.size) unmarkUrls([...marks.entries()].filter(([k, m]) => m.saved && !keep.has(k)).map(([k]) => k));
+      // 다운로드 목록창: 어떤 영상이 수집 링크 목록에 있는지 ([목록에 추가] 버튼이 이 값으로 켜지고 꺼진다)
+      if (dlp) { for (const [k, it] of dlp.items) it.added = keep.has(k); dlRefresh(); }
     });
   } catch (e) { /* extension context invalidated */ }
   function clearDrawing() {
@@ -708,15 +710,14 @@
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
     // toggle: outlined links are deselected (outline off + removed from the list), the rest are selected
     const fresh = new Set(), off = new Set();
-    // 영상 다운로드도 토글한다. 기준은 목록창: 박스가 있고 목록창에 있는 영상을 다시 감싸면 목록창에서 빼고 박스를 지운다.
-    // (다른 규칙으로 표시된 링크는 목록창에 없으므로 새로 올린다)
-    const isOn = (h) => (rule.action === 'download' ? isMarked(h.a) && !!dlp && dlp.items.has(keyOf(h.a.href)) : isMarked(h.a));
-    for (const h of hits) (isOn(h) ? off : fresh).add(h);
+    // 영상 다운로드도 같은 토글이다: 박스가 있는 링크를 다시 감싸면 박스를 지우고 수집 링크 목록에서 뺀다.
+    // 받는 중인 영상은 건드리지 않는다 (멈추려면 목록창의 [다운로드 중지])
+    const busy = (h) => { const it = dlp && dlp.items.get(keyOf(h.a.href)); return !!it && (dlp.sending || dlRunning(it)); };
+    for (const h of hits) { if (isMarked(h.a)) { if (!busy(h)) off.add(h); } else fresh.add(h); }
     const offKeys = new Set([...off].map((h) => keyOf(h.a.href)));
-    if (offKeys.size && rule.action === 'download') {
-      dlDrop(offKeys);   // 목록창과 박스에서만 뺀다. 수집 링크 목록에 넣어 둔 것은 지우지 않는다
-    } else if (offKeys.size) {
+    if (offKeys.size) {
       unmarkUrls(offKeys);
+      dlDropRows(offKeys);   // 다운로드 목록창에 올라 있으면 거기서도 뺀다
       if (!DEMO) {
         const r = await send({ type: 'pl:removeUrls', urls: [...offKeys] });
         const n = r && r.ok ? r.count : 0;
@@ -742,9 +743,13 @@
     if (rule.action === 'download') {
       const vids = links.filter(dlOk);
       if (!vids.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리 게시물 링크만 받을 수 있어요' }); return; }
-      // 드래그만으로는 수집 링크 목록에 담지 않는다: 목록창의 [목록에 추가] 를 눌러야 저장된다
-      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', false);
+      // 드래그하면 박스가 생기고 수집 링크 목록에 바로 들어간다 (다른 수집 규칙과 같다). 받을 영상은 목록창에서 고른다
+      const r = await send({ type: 'pl:grab', action: 'download', shape: rule.shape, mod: rule.mod, links: vids, page: { url: location.href, title: document.title } });
+      if (!r || !r.ok) { toast({ tone: '#F04438', error: true, title: (r && r.message) || '처리하지 못했어요', sub: how }); return; }
+      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', true);
       openDlPanel(vids, rule.color || '#C83F55');
+      for (const l of vids) { const it = dlp && dlp.items.get(keyOf(l.url)); if (it) it.added = true; }
+      dlRefresh();
       return;
     }
     const res = await send({ type: 'pl:grab', action: rule.action, shape: rule.shape, mod: rule.mod, links, page: { url: location.href, title: document.title } });
@@ -776,26 +781,18 @@
   const DL_DONE = { completed: 1, error: 1, failed: 1, cancelled: 1 };
   const dlSent = (it) => !!it.taskId;
   const dlRunning = (it) => dlSent(it) && !DL_DONE[it.status];
-  // 목록창과 박스는 항상 같은 내용이다: 목록창에서 빠지는 영상은 박스도 지운다.
-  // 받는 중인 영상은 빼지 않는다 (중지는 [다운로드 중지] 로). 뺀 개수를 돌려준다
-  function dlDrop(keys) {
-    if (!dlp || dlp.sending) return 0;
-    const gone = new Set();
-    for (const k of keys) {
-      const it = dlp.items.get(k);
-      if (!it || dlRunning(it)) continue;
-      it.row.remove(); dlp.items.delete(k); gone.add(k);
-    }
-    unmarkUrls(gone);
+  // 다운로드 목록창에서 줄을 뺀다. 받는 중인 영상은 그대로 둔다. 비면 창을 닫는다
+  function dlDropRows(keys) {
+    if (!dlp || dlp.sending) return;
+    let n = 0;
+    for (const k of keys) { const it = dlp.items.get(k); if (!it || dlRunning(it)) continue; it.row.remove(); dlp.items.delete(k); n++; }
+    if (!n) return;
     if (!dlp.items.size) closeDlPanel(); else dlRefresh();
-    return gone.size;
   }
   function closeDlPanel() {
     if (!dlp) return;
     if (dlp.sending || [...dlp.items.values()].some(dlRunning)) return; // 받는 중에는 닫지 않는다
     clearTimeout(dlp.timer);
-    // 창이 닫히면 목록이 없어지므로 박스도 지운다. 수집 링크 목록에 넣은 영상의 박스는 '담긴 링크' 표시로 남긴다
-    unmarkUrls(new Set([...dlp.items.entries()].filter(([, it]) => !it.added).map(([k]) => k)));
     const el = dlp.el; dlp = null;
     el.classList.add('out'); setTimeout(() => el.remove(), 200);
   }
@@ -995,7 +992,12 @@
 
   function deleteChecked() {
     if (!dlp || [...dlp.items.values()].some(dlRunning)) return;
-    dlDrop(new Set([...dlp.items.entries()].filter(([, it]) => dlChecked(it)).map(([k]) => k)));   // 페이지의 박스도 함께 지운다
+    const picked = [...dlp.items.entries()].filter(([, it]) => dlChecked(it));
+    if (!picked.length) return;
+    for (const [k, it] of picked) { it.row.remove(); dlp.items.delete(k); }
+    unmarkUrls(new Set(picked.filter(([, it]) => !it.added).map(([k]) => k)));   // 박스는 수집 링크 목록과 짝: 목록에 있는 영상의 박스는 남긴다
+    if (!dlp.items.size) { closeDlPanel(); return; }
+    dlRefresh();
   }
 
   async function writeClip(text, html) {
