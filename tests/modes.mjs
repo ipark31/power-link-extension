@@ -62,6 +62,20 @@ try {
   const addBtn = async () => { await page.bringToFront(); await page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15); await wait(700); };   // 다운로드 창의 [목록에 추가]
   const tabs = () => ctx.pages().length;
 
+  // ---- 0) 규칙: 목록에 있으면 외곽선이 보인다. '페이지 선택 표시 숨기기'(눈 버튼, Alt+Shift+M) 상태여도 마찬가지
+  const setShow = async (v) => { await sw.evaluate(async (v) => chrome.storage.local.set({ pl_showMarks: v }), v); await wait(400); };
+  const getShow = () => sw.evaluate(async () => (await chrome.storage.local.get('pl_showMarks')).pl_showMarks !== false);
+  await setShow(false);
+  await drag(1);
+  ok('표시 숨기기 상태에서 우클릭 드래그 → 외곽선이 보임', (await box(1)) === '빨강', await box(1));
+  ok('드래그하면 표시가 다시 켜짐', await getShow());
+  await setShow(false);   // 다운로드 창이 열려 있는 동안 숨기기를 눌러도
+  ok('다운로드 창에 있는 영상의 외곽선은 숨기기를 눌러도 남음', (await box(1)) === '빨강', await box(1));
+  await drag(3, 'Control');
+  ok('표시 숨기기 상태에서 Ctrl+드래그 → 외곽선이 보이고 표시가 켜짐', (await box(3)) === '파랑' && (await getShow()), `${await box(3)}, ${await getShow()}`);
+  await drag(3, 'Control'); await drag(1);   // 원래대로 (목록 비움, 다운로드 창 닫힘)
+  ok('다시 드래그 → 외곽선과 목록에서 함께 빠짐', (await box(1)) === '' && (await box(3)) === '' && (await ids()) === '', `${await box(1)}|${await box(3)}|${await ids()}`);
+
   // ---- 1) 우클릭: 다운로드 창만
   await drag(1); await drag(2);
   ok('우클릭 드래그 → 빨간 박스', (await box(1)) === '빨강' && (await box(2)) === '빨강', `${await box(1)}, ${await box(2)}`);

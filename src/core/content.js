@@ -71,6 +71,9 @@
     .marks { position: absolute; inset: 0; overflow: hidden; }
     .marks-doc { position: absolute; left: 0; top: 0; will-change: transform; }
     .mark { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 6%, transparent); }
+    /* 'hide page marks' (side panel eye button, Alt+Shift+M) hides the boxes of saved links and opened tabs, never the boxes of
+       videos in the open download panel: what is in that panel is always outlined on the page. */
+    .marks.hide .mark:not(.keep) { display: none !important; }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
     .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,var(--sh)); white-space: nowrap; }
     .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px 2px; border-radius: 8px; background: var(--chip); font-size: 14px; line-height: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -567,6 +570,7 @@
       let el = m.els.get(a);
       if (!el) { el = document.createElement('div'); el.className = 'mark'; doc.appendChild(el); m.els.set(a, el); }
       el.style.setProperty('--tone', shown);
+      el.classList.toggle('keep', m.groups.has('dl'));
       placeOutline(el, a);
     }
     syncMarks();
@@ -608,7 +612,7 @@
       if (!m) continue;
       if (group) {
         m.groups.delete(group);
-        if (m.groups.size) { const t = toneOf(m); m.els.forEach((el) => el.style.setProperty('--tone', t)); continue; }
+        if (m.groups.size) { const t = toneOf(m), keep = m.groups.has('dl'); m.els.forEach((el) => { el.style.setProperty('--tone', t); el.classList.toggle('keep', keep); }); continue; }
       }
       m.els.forEach((el) => el.remove());
       marks.delete(k);
@@ -622,7 +626,13 @@
   }, { capture: true, passive: true });
   // show / hide every outline (side panel eye button, Alt+Shift+M) — 'pl_showMarks' in storage.local
   let showMarks = true;
-  const applyShowMarks = () => { const m = root && root.querySelector('.marks'); if (m) m.style.display = showMarks ? '' : 'none'; };
+  const applyShowMarks = () => { const m = root && root.querySelector('.marks'); if (m) m.classList.toggle('hide', !showMarks); };
+  // A drag is done while looking at the boxes, and what it puts in a list must be outlined: a drag turns the display back on.
+  function showMarksAgain() {
+    if (showMarks) return;
+    showMarks = true; applyShowMarks();
+    try { chrome.storage.local.set({ pl_showMarks: true }); } catch (e) { /* extension context invalidated */ }
+  }
   try {
     chrome.storage.local.get('pl_showMarks', (r) => { if (!chrome.runtime.lastError && r && r.pl_showMarks === false) { showMarks = false; applyShowMarks(); } });
     chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.pl_showMarks) { showMarks = ch.pl_showMarks.newValue !== false; applyShowMarks(); } });
@@ -729,6 +739,7 @@
     document.documentElement.style.removeProperty('user-select');
     if (!d) return;
     const hits = computeHitsFor(d);
+    if (hits.size) showMarksAgain();
     const rule = d.rule;
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
     // Toggle, per drag mode: a link that is already in THIS mode's target is taken out, the others are put in.
@@ -823,7 +834,7 @@
   function closeDlPanel() {
     if (!dlp) return;
     if (dlp.sending || [...dlp.items.values()].some(dlRunning)) return; // 받는 중에는 닫지 않는다
-    clearTimeout(dlp.timer);
+    clearTimeout(dlp.timer); clearInterval(dlp.markTimer);
     unmarkUrls(new Set(dlp.items.keys()), 'dl');   // 창이 닫히면 '다운로드' 박스도 없어진다
     const el = dlp.el; dlp = null;
     el.classList.add('out'); setTimeout(() => el.remove(), 200);
@@ -921,6 +932,12 @@
       el.addEventListener('contextmenu', (e) => e.stopPropagation(), true);
       toastWrap.parentNode.appendChild(el);
       dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false, stopping: false, adding: false, note: null };
+      // 목록에 있으면 외곽선도 있어야 한다: 화면이 바뀌거나(유튜브의 페이지 전환) 카드가 뒤늦게 그려져 외곽선이 없는 영상을 다시 표시한다
+      dlp.markTimer = setInterval(() => {
+        if (!dlp) return;
+        const missing = [...dlp.items.keys()].filter((k) => { const m = marks.get(k); return !m || !m.groups.has('dl') || marksHref !== location.href; });
+        if (missing.length) markUrls(new Set(missing), dlp.tone || '#C83F55', 'dl');
+      }, 1500);
     }
     const list = dlp.el.querySelector('.dlp-list');
     for (const l of links) {
