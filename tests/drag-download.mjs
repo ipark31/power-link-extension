@@ -1,6 +1,7 @@
 // 우클릭 드래그(수정키 없음) → 영상 다운로드 목록창 → [다운로드] 검증. 실행: node tests/drag-download.mjs
 // 다운로더 서버는 목(/batch, /batch/:id)으로 대신한다. 목록창은 닫힌 shadow root 안이라 DOM 으로 못 보므로
 // 저장소(pl_links)·목 서버가 받은 요청·화면 좌표 클릭으로 확인한다.
+// 드래그는 목록창만 띄운다. 수집 링크 목록에는 [목록에 추가] 를 눌러야 담긴다.
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -68,10 +69,15 @@ try {
   await page.mouse.move(600, 100, { steps: 6 }); await page.mouse.move(1000, 220, { steps: 10 }); await wait(150);
   await page.mouse.up({ button: 'right' }); await wait(900);
 
-  const links = await sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || []);
-  ok('드래그 후 영상 링크 3개가 목록에 담김 (블로그 제외)', links.length === 3 && links.every((l) => l.platform === 'yt'), links.map((l) => l.url.slice(-12)).join(','));
+  const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || []);
+  ok('드래그만으로는 수집 링크 목록에 담기지 않음 (목록창만 뜸)', (await stored()).length === 0);
+  // 목록창의 [목록에 추가]: 버튼 줄 오른쪽 끝에서 238px 왼쪽 (tests/align.mjs 가 잰 버튼 위치)
+  await page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);
+  ok('[목록에 추가] 클릭 → 목록에 저장', await until(async () => (await stored()).length === 3, 5000));
+  const links = await stored();
+  ok('목록에 영상 링크 3개가 담김 (블로그 제외)', links.length === 3 && links.every((l) => l.platform === 'yt'), links.map((l) => l.url.slice(-12)).join(','));
   ok('썸네일의 통계 배지(VPH)가 아니라 영상 제목이 담김', links.every((l, i) => l.title === '영상 제목 ' + (i + 1)), links.map((l) => l.title).join(' | '));
-  ok('요청은 아직 안 보냄 (목록창만 뜸)', posted.length === 0);
+  ok('다운로드 요청은 아직 안 보냄', posted.length === 0);
 
   // 목록창의 [다운로드 3개] 버튼: 창 오른쪽 아래 (right 24 · bottom 24 · 푸터 padding 12 · 버튼 30px)
   await page.mouse.click(1200 - 24 - 12 - 48, 800 - 24 - 12 - 15); await wait(600);

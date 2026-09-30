@@ -85,16 +85,18 @@
     .md { font-size: 13px; line-height: 20px; color: #D0D0D0; }
     .modal .acts { margin-top: 8px; }
     /* 다운로드 목록창 (우클릭 드래그 → 영상 고르기 → 다운로드) */
-    .dlp { position: fixed; right: 24px; bottom: 24px; width: 400px; max-height: min(70vh, 640px); z-index: 2147483647; pointer-events: auto; display: flex; flex-direction: column;
+    .dlp { position: fixed; right: 24px; bottom: 24px; width: 424px; max-height: min(70vh, 640px); z-index: 2147483647; pointer-events: auto; display: flex; flex-direction: column;
            border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 16px 36px -12px rgba(0,0,0,.6); animation: in .18s ease; overflow: hidden; }
     .dlp.out { animation: out .18s ease forwards; }
     .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid #262626; }
     .dlp-h .ic { background: var(--tone, #C83F55); margin-top: 0; }
     .dlp-h .tt { flex: 1; }
-    .dlp-h .x { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
-    .dlp-h .x:hover { background: #272727; color: #F1F1F1; }
-    .dlp-h .x:disabled { opacity: .3; cursor: not-allowed; background: none; }
+    .dlp-h .x, .dlp-h .cfg { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
+    .dlp-h .x:hover, .dlp-h .cfg:hover { background: #272727; color: #F1F1F1; }
+    .dlp-h .x:disabled, .dlp-h .cfg:disabled { opacity: .3; cursor: not-allowed; background: none; }
     .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+    .dlp-h .cfg { margin-right: -4px; }
+    .dlp-h .cfg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
     .dlp-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
     .dlp-row { display: grid; grid-template-columns: 18px 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
     .dlp-row > .dlp-b { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -117,8 +119,9 @@
     .dlp-bar { height: 4px; border-radius: 2px; background: #272727; overflow: hidden; display: none; }
     .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
     .dlp-bar.on { display: block; }
-    .dlp-acts { display: flex; gap: 8px; align-items: center; }
-    .dlp-acts .n { font-size: 12px; line-height: 12px; padding: 9px 0 10px; color: #AAAAAA; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .dlp-btns { display: flex; gap: 8px; margin-left: auto; }
+    .dlp-acts .n { font-size: 12px; line-height: 12px; padding: 9px 0 10px; color: #AAAAAA; flex: 0 1 auto; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button:disabled { opacity: .45; cursor: default; }
     button.stop { background: #7F1D1D; color: #FEE2E2; }
     button.stop:hover { background: #991B1B; }
@@ -708,9 +711,8 @@
     if (rule.action === 'download') {
       const vids = links.filter(dlOk);
       if (!vids.length) { toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리 게시물 링크만 받을 수 있어요' }); return; }
-      const r = await send({ type: 'pl:grab', action: 'download', shape: rule.shape, mod: rule.mod, links: vids, page: { url: location.href, title: document.title } });
-      if (!r || !r.ok) { toast({ tone: '#F04438', error: true, title: (r && r.message) || '처리하지 못했어요', sub: how }); return; }
-      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', true);
+      // 드래그만으로는 수집 링크 목록에 담지 않는다: 목록창의 [목록에 추가] 를 눌러야 저장된다
+      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', false);
       openDlPanel(vids, rule.color || '#C83F55');
       return;
     }
@@ -802,7 +804,8 @@
     } else {
       line = `${all.length}개 중 ${toSend.length}개 선택`;
     }
-    q('.dlp-acts .n').textContent = line;
+    // [목록에 추가] 결과는 이 줄에 잠깐 보여 준다 (알림은 이 창 뒤에 가려진다)
+    q('.dlp-acts .n').textContent = dlp.note && dlp.note.until > Date.now() ? dlp.note.text : line;
     q('.dlp-bar').classList.toggle('on', sent.length > 0);
 
     // 받는 동안 체크박스는 체크된 상태 그대로 잠근다
@@ -819,6 +822,10 @@
     del.disabled = busy || !checked.length;
     del.textContent = !busy && checked.length ? `선택 삭제 ${checked.length}` : '선택 삭제';
     cfg.disabled = busy;
+    // 목록에 추가: 체크한 것 중 아직 목록에 넣지 않은 영상. 받는 동안에는 잠근다
+    const add = q('button.add'), toAdd = checked.filter((it) => !it.added);
+    add.disabled = busy || dlp.adding === true || !toAdd.length;
+    add.textContent = dlp.adding ? '추가하는 중…' : checked.length && !toAdd.length ? '목록에 있음' : '목록에 추가';
     // 받는 중에는 창을 닫을 수 없다 (닫으면 진행 상황과 중지 버튼이 사라진다)
     const x = q('.x'); x.disabled = busy; x.title = busy ? '받는 중에는 닫을 수 없어요. 멈추려면 다운로드 중지를 누르세요' : '';
   }
@@ -829,12 +836,13 @@
       const el = document.createElement('div');
       el.className = 'dlp';
       el.style.setProperty('--tone', tone || '#C83F55');
-      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
         <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
-          <div class="dlp-acts"><span class="n"></span><button type="button" class="cfg">설정</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></div></div>`;
+          <div class="dlp-acts"><span class="n"></span><span class="dlp-btns"><button type="button" class="add" title="체크한 영상을 수집 링크 목록에 저장해요">목록에 추가</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></span></div></div>`;
       el.querySelector('.x').addEventListener('click', closeDlPanel);
       el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
+      el.querySelector('.add').addEventListener('click', addToList);
       el.querySelector('.pri').addEventListener('click', startDl);
       el.querySelector('.del').addEventListener('click', deleteChecked);
       el.querySelector('.stop').addEventListener('click', stopAll);
@@ -842,14 +850,14 @@
       el.addEventListener('mousedown', (e) => e.stopPropagation(), true); // 창 안에서 드래그가 시작되지 않게
       el.addEventListener('contextmenu', (e) => e.stopPropagation(), true);
       toastWrap.parentNode.appendChild(el);
-      dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false, stopping: false };
+      dlp = { el, items: new Map(), timer: 0, tone, toasted: new Set(), sending: false, stopping: false, adding: false, note: null };
     }
     const list = dlp.el.querySelector('.dlp-list');
     for (const l of links) {
       const k = keyOf(l.url);
       if (dlp.items.has(k)) continue;
       const row = dlRow(l); list.appendChild(row);
-      dlp.items.set(k, { link: l, row, taskId: '', batchId: '', status: '', progress: 0 });
+      dlp.items.set(k, { link: l, row, taskId: '', batchId: '', status: '', progress: 0, added: false });
     }
     dlRefresh();
   }
@@ -927,6 +935,23 @@
   }
 
   // 받는 중에는 잠겨 있어 호출되지 않는다. 받기 전이나 끝난 뒤에 체크한 항목을 목록에서 뺀다
+  // 체크한 영상을 수집 링크 목록(사이드바)에 저장한다. 드래그만으로는 저장하지 않는다
+  async function addToList() {
+    if (!dlp || dlp.adding) return;
+    const picked = [...dlp.items.values()].filter((it) => dlChecked(it) && !it.added);
+    if (!picked.length) return;
+    dlp.adding = true; dlRefresh();
+    const r = await send({ type: 'pl:grab', action: 'save', shape: 'box', mod: 'none', links: picked.map((it) => it.link), page: { url: location.href, title: document.title } });
+    if (!dlp) return;
+    dlp.adding = false;
+    const say = (text) => { dlp.note = { text, until: Date.now() + 2500 }; setTimeout(() => dlp && dlRefresh(), 2600); };
+    if (!r || !r.ok) { say((r && r.message) || '목록에 추가하지 못했어요'); dlRefresh(); return; }
+    for (const it of picked) it.added = true;
+    markUrls(new Set(picked.map((it) => keyOf(it.link.url))), dlp.tone || '#C83F55', true);
+    say(`목록에 ${picked.length}개 추가했어요`);
+    dlRefresh();
+  }
+
   function deleteChecked() {
     if (!dlp || [...dlp.items.values()].some(dlRunning)) return;
     const picked = [...dlp.items.entries()].filter(([, it]) => dlChecked(it));

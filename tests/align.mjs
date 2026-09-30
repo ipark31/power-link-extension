@@ -18,11 +18,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const row = (title, cls, status, pct) => `<div class="dlp-row"><input type="checkbox" checked><span class="dlp-th"></span><span class="dlp-b"><div class="dlp-t">${title}</div><div class="dlp-line"><div class="dlp-pb ${cls}"><span style="width:${pct}%"></span></div><div class="dlp-m ${status[0]}">${status[1]}</div></div></span></div>`;
 const MARKUP = `
-<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="cfg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div class="dlp-list">${row('왕초보 유튜버가 4000시간을 넘기는 현실적인 방법 (유튜브 8000시간)', 'idle', ['host', 'youtube.com'], 0)}${row('짧은 제목', '', ['run', '42%'], 42)}${row('합치는 영상', '', ['run', '합치는 중'], 100)}${row('끝난 영상', 'ok', ['ok', '완료'], 100)}</div>
   <div class="dlp-f"><div class="dlp-where">저장 위치: 다운로드 폴더 › PowerLink · 영상+음성 · 최고 화질</div><div class="dlp-bar on"><span style="width:40%"></span></div>
-  <div class="dlp-acts"><span class="n">7개 중 7개 선택</span><button type="button" class="cfg">설정</button><button type="button" class="del">선택 삭제 7</button><button type="button" class="pri">다운로드 7개</button></div></div></div>
-<div class="dlp" id="p2" style="--tone:#C83F55"><div class="dlp-f"><div class="dlp-acts"><span class="n">받는 중 2/7 · 40%</span><button type="button" class="stop">다운로드 중지</button><button type="button" class="pri" disabled>다운로드</button></div></div></div>
+  <div class="dlp-acts"><span class="n">7개 중 7개 선택</span><span class="dlp-btns"><button type="button" class="add">목록에 추가</button><button type="button" class="del">선택 삭제 7</button><button type="button" class="pri">다운로드 7개</button></span></div></div></div>
+<div class="dlp" id="p2" style="--tone:#C83F55"><div class="dlp-f"><div class="dlp-acts"><span class="n">다운로드 중 40% · 완료 2/7</span><span class="dlp-btns"><button type="button" class="add" disabled>목록에 추가</button><button type="button" class="del" disabled>선택 삭제</button><button type="button" class="stop">다운로드 중지</button></span></div></div></div>
 <div class="toasts"><div class="toast" id="t1"><div class="head"><span class="ic"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"></path></svg></span><div><div class="tt">링크 7개를 담았어요</div><div class="ts">Alt + 드래그 · 네모</div></div></div><div class="list"><span>• 첫 번째 영상 제목</span><span>• 두 번째 영상 제목</span></div><div class="acts"><button>실행 취소</button><button class="pri">목록 열기</button></div></div>
 <div class="toast err" id="t2"><div class="head"><span class="ic"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></span><div><div class="tt">처리하지 못했어요</div></div></div></div></div>
 <div class="modal"><div class="modal-card"><div class="mt">링크 25개를 열까요?</div><div class="md">탭이 한꺼번에 많이 열려요.</div><div class="acts"><button>취소</button><button class="pri">확인</button></div></div></div>
@@ -90,19 +90,26 @@ try {
 
   R.push(`INFO  글꼴: ${fonts || '(없음)'}${URL_ ? ' · ' + URL_ : ''}`);
   // 1) 버튼: 글자가 버튼 상자의 가운데
-  for (const [name, sel] of [['목록창 [설정]', '#p1 .cfg'], ['목록창 [선택 삭제 7]', '#p1 .del'], ['목록창 [다운로드 7개]', '#p1 .pri'], ['목록창 [다운로드 중지]', '#p2 .stop'],
+  for (const [name, sel] of [['목록창 [목록에 추가]', '#p1 .add'], ['목록창 [선택 삭제 7]', '#p1 .del'], ['목록창 [다운로드 7개]', '#p1 .pri'], ['목록창 [다운로드 중지]', '#p2 .stop'],
     ['알림 [실행 취소]', '#t1 .acts button'], ['알림 [목록 열기]', '#t1 .acts .pri'], ['확인 창 [취소]', '.modal .acts button'], ['확인 창 [확인]', '.modal .acts .pri']]) {
     const k = await ink(sel, 14); check('버튼 글자 · ' + name, k.cy - mid(k.box));
   }
   // 2) 버튼 옆 글자: 버튼과 같은 높이
-  check('목록창 아래 "7개 중 7개 선택" ↔ 버튼', (await ink('#p1 .dlp-acts .n')).cy - mid(await boxOf('#p1 .cfg')));
-  check('목록창 아래 "받는 중 2/7" ↔ 버튼', (await ink('#p2 .dlp-acts .n')).cy - mid(await boxOf('#p2 .stop')));
+  check('목록창 아래 "7개 중 7개 선택" ↔ 버튼', (await ink('#p1 .dlp-acts .n')).cy - mid(await boxOf('#p1 .add')));
+  { const n2 = await ink('#p2 .dlp-acts .n'), s2 = await boxOf('#p2 .stop'); if (Math.abs(n2.cy - mid(s2)) < 8) check('목록창 아래 "다운로드 중 40%" ↔ 버튼', n2.cy - mid(s2)); else R.push('PASS  받는 중: 문구가 길어 버튼 묶음이 다음 줄로 내려감'); }
   // 3) 머리말: 아이콘 ↔ 제목 ↔ 닫기
   const hic = mid(await boxOf('#p1 .dlp-h .ic'));
   check('목록창 제목 "영상 다운로드" ↔ 아이콘', (await ink('#p1 .dlp-h .tt')).cy - hic);
   check('목록창 닫기(×) ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .x')) - hic);
   check('목록창 아이콘 안 화살표', (await ink('#p1 .dlp-h .ic')).cy - hic);
   check('목록창 닫기(×) 안 그림', (await ink('#p1 .dlp-h .x')).cy - mid(await boxOf('#p1 .dlp-h .x')));
+  check('목록창 설정(톱니바퀴) ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .cfg')) - hic);
+  check('목록창 설정(톱니바퀴) 안 그림', (await ink('#p1 .dlp-h .cfg')).cy - mid(await boxOf('#p1 .dlp-h .cfg')));
+  // 아래 버튼 줄이 창 너비 안에 들어가는지, 글자가 잘리지 않는지
+  for (const id of ['#p1', '#p2']) {
+    const fit = await page.evaluate((id) => { const r = document.querySelector('#plq').shadowRoot; const n = r.querySelector(id + ' .dlp-acts .n'); const a = r.querySelector(id + ' .dlp-acts'); return { cut: n.scrollWidth - n.clientWidth, over: a.scrollWidth - a.clientWidth, btn: [...a.querySelectorAll('button')].map((b) => [b.textContent, Math.round(b.getBoundingClientRect().left - a.getBoundingClientRect().right), Math.round(b.getBoundingClientRect().width)]) }; }, id);
+    R.push(`${fit.cut <= 0 && fit.over <= 0 ? 'PASS' : 'FAIL'}  ${id === '#p1' ? '목록창' : '받는 중'} 아래 줄이 너비 안에 들어감  — 글자 잘림 ${fit.cut}px, 넘침 ${fit.over}px · 버튼 ${JSON.stringify(fit.btn)}`);
+  }
   // 4) 목록 줄: 체크박스 ↔ 썸네일, 상태 글자 ↔ 진행 막대
   for (const i of [1, 2, 3, 4]) {
     const r = `#p1 .dlp-row:nth-child(${i})`;
