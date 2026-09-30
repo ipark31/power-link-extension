@@ -43,7 +43,16 @@
   let host = null, root = null, layer = null, svg = null, pathEl = null, boxEl = null, pill = null, hlLayer = null, toastWrap = null;
   const CSS = `
     :host { all: initial; }
-    * { box-sizing: border-box; font-family: Roboto, 'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif; }
+    /* Vertical centering (checked by tests/align.mjs, which measures the text ink in pixels):
+       - The first available font sets the line box. Korean fonts come first so that Hangul and Latin share one font on every site;
+         with Roboto first, pages that load it (YouTube) got a different line box from pages that do not.
+       - line-height is explicit and in whole pixels everywhere: with 'normal', a fallback font's taller ascent stretches the line box
+         and text sits low; a fractional line-height (1.4 x 11px) puts boxes between pixels and text then rounds up here, down there.
+       - The browser puts the text baseline on a whole pixel, and Korean fonts draw glyphs about half a pixel below the middle of the
+         line box. In an even-height pill the text therefore ends up half a pixel high or low whatever the padding. Pills (buttons,
+         the count badge) have an odd height and 1px more padding at the bottom: measured 0.00px off with Noto Sans KR and
+         0.13-0.25px with Malgun Gothic. Text beside buttons copies the button's geometry so both share a baseline. */
+    * { box-sizing: border-box; font-family: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', Roboto, Arial, sans-serif; line-height: 16px; }
     .layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
     svg.draw { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
     .box { position: absolute; border: 2px dashed var(--tone); border-radius: 6px; background: color-mix(in srgb, var(--tone) 7%, transparent); display: none; }
@@ -53,34 +62,34 @@
     .mark { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 6%, transparent); }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
     .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); white-space: nowrap; }
-    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; background: #272727; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
-    .pill .t { font-size: 13px; font-weight: 500; }
+    .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px 2px; border-radius: 8px; background: #272727; font-size: 14px; line-height: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .pill .t { font-size: 13px; line-height: 18px; font-weight: 500; }
     .pill .s { font-size: 11px; color: #AAAAAA; }
     .toasts { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2147483647; }
     .toast { pointer-events: auto; width: 360px; padding: 14px; border-radius: 12px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 10px; animation: in .22s cubic-bezier(.2,.8,.2,1); }
     .toast.out { animation: out .18s ease forwards; }
     .head { display: flex; gap: 10px; align-items: flex-start; }
-    .ic { width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; background: #16A34A; display: grid; place-items: center; flex-shrink: 0; }
+    .ic { width: 22px; height: 22px; margin-top: -1px; border-radius: 50%; background: #16A34A; display: grid; place-items: center; flex-shrink: 0; }
     .toast.err .ic { background: #DC2626; }
     .ic svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-    .tt { font-size: 13px; font-weight: 500; line-height: 1.45; }
-    .ts { font-size: 12px; color: #AAAAAA; margin-top: 2px; }
+    .tt { font-size: 13px; font-weight: 500; line-height: 20px; }
+    .ts { font-size: 12px; line-height: 17px; color: #AAAAAA; margin-top: 2px; }
     .list { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #1F1F1F; }
-    .list span { font-size: 12px; color: #D0D0D0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .list span { font-size: 12px; line-height: 17px; color: #D0D0D0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .acts { display: flex; gap: 8px; justify-content: flex-end; }
-    button { height: 30px; padding: 0 14px; border-radius: 15px; font-size: 12px; font-weight: 500; cursor: pointer; border: 0; background: #272727; color: #F1F1F1; }
+    button { display: inline-flex; align-items: center; justify-content: center; height: 31px; padding: 0 14px 1px; border-radius: 16px; font-size: 12px; line-height: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; border: 0; background: #272727; color: #F1F1F1; }
     button.pri { background: #F1F1F1; color: #0F0F0F; }
     .modal { position: fixed; inset: 0; z-index: 2147483647; pointer-events: auto; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
     .modal-card { width: 100%; max-width: 340px; padding: 20px; border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 12px 28px -10px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 8px; animation: in .15s ease; }
-    .mt { font-size: 15px; font-weight: 500; }
-    .md { font-size: 13px; line-height: 1.55; color: #D0D0D0; }
+    .mt { font-size: 15px; line-height: 22px; font-weight: 500; }
+    .md { font-size: 13px; line-height: 20px; color: #D0D0D0; }
     .modal .acts { margin-top: 8px; }
     /* 다운로드 목록창 (우클릭 드래그 → 영상 고르기 → 다운로드) */
     .dlp { position: fixed; right: 24px; bottom: 24px; width: 400px; max-height: min(70vh, 640px); z-index: 2147483647; pointer-events: auto; display: flex; flex-direction: column;
            border-radius: 14px; background: #0F0F0F; color: #F1F1F1; border: 1px solid #303030; box-shadow: 0 16px 36px -12px rgba(0,0,0,.6); animation: in .18s ease; overflow: hidden; }
     .dlp.out { animation: out .18s ease forwards; }
     .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid #262626; }
-    .dlp-h .ic { background: var(--tone, #C83F55); }
+    .dlp-h .ic { background: var(--tone, #C83F55); margin-top: 0; }
     .dlp-h .tt { flex: 1; }
     .dlp-h .x { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
     .dlp-h .x:hover { background: #272727; color: #F1F1F1; }
@@ -99,8 +108,8 @@
     .dlp-row:hover { background: #1A1A1A; }
     .dlp-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--tone, #C83F55); cursor: pointer; }
     .dlp-th { width: 56px; height: 32px; border-radius: 6px; background: #272727 center/cover no-repeat; flex-shrink: 0; }
-    .dlp-t { font-size: 12px; line-height: 1.35; max-height: 2.7em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .dlp-m { font-size: 11px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
+    .dlp-t { font-size: 12px; line-height: 16px; max-height: 32px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .dlp-m { font-size: 11px; line-height: 15px; padding-bottom: 1px; color: #AAAAAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
     .dlp-m.host { flex-shrink: 1; min-width: 0; }
     .dlp-m.ok { color: #4ADE80; } .dlp-m.err { color: #F87171; } .dlp-m.run { color: #F1F1F1; }
     .dlp-f { padding: 10px 12px 12px; border-top: 1px solid #262626; display: flex; flex-direction: column; gap: 8px; }
@@ -109,7 +118,7 @@
     .dlp-bar span { display: block; height: 100%; width: 0; background: var(--tone, #C83F55); transition: width .4s ease; }
     .dlp-bar.on { display: block; }
     .dlp-acts { display: flex; gap: 8px; align-items: center; }
-    .dlp-acts .n { font-size: 12px; color: #AAAAAA; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlp-acts .n { font-size: 12px; line-height: 12px; padding: 9px 0 10px; color: #AAAAAA; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button:disabled { opacity: .45; cursor: default; }
     button.stop { background: #7F1D1D; color: #FEE2E2; }
     button.stop:hover { background: #991B1B; }
