@@ -71,9 +71,28 @@ try {
 
   const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || []);
   ok('드래그만으로는 수집 링크 목록에 담기지 않음 (목록창만 뜸)', (await stored()).length === 0);
+
+  // 토글: 박스가 있는 영상을 다시 드래그하면 목록창에서 빠지고 박스도 지워진다. 목록창은 닫힌 shadow root 안이라
+  // 박스는 화면의 화소(첫 카드 썸네일 왼쪽 테두리)로, 목록창 내용은 [목록에 추가] 로 저장되는 개수로 확인한다.
+  const helper = await ctx.newPage(); await helper.setContent('<canvas></canvas>'); await page.bringToFront();
+  const boxed = async () => {
+    // 박스 테두리는 링크보다 2px 바깥에 2px 두께로 그려진다 (첫 카드 썸네일은 x=40 에서 시작 → 테두리 x=36~38)
+    const png = (await page.screenshot({ clip: { x: 36, y: 100, width: 2, height: 2 } })).toString('base64');
+    const [r, g, b] = await helper.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.querySelector('canvas'); c.width = 2; c.height = 2; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(0, 0, 1, 1).data]; }, png);
+    return r > 150 && g < 120 && b < 140;   // 규칙 색(#C83F55) 계열이면 박스가 있는 것
+  };
+  const dragCard1 = async () => { await page.mouse.move(30, 30); await page.mouse.down({ button: 'right' }); await page.mouse.move(150, 100, { steps: 5 }); await page.mouse.move(270, 200, { steps: 6 }); await wait(150); await page.mouse.up({ button: 'right' }); await wait(700); };
+  const addBtn = () => page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);
+  ok('드래그한 영상에 박스가 표시됨', await boxed());
+  await dragCard1();
+  ok('다시 드래그 → 박스가 지워짐', !(await boxed()));
+  await addBtn();
+  ok('다시 드래그 → 목록창에서도 빠짐 (남은 2개만 저장됨)', await until(async () => (await stored()).length === 2, 5000), (await stored()).map((l) => l.url.slice(-12)).join(','));
+  await dragCard1();
+  ok('한 번 더 드래그 → 박스와 목록창에 다시 들어옴', await boxed());
   // 목록창의 [목록에 추가]: 버튼 줄 오른쪽 끝에서 238px 왼쪽 (tests/align.mjs 가 잰 버튼 위치)
   await page.mouse.click(1200 - 24 - 12 - 238, 800 - 24 - 12 - 15);
-  ok('[목록에 추가] 클릭 → 목록에 저장', await until(async () => (await stored()).length === 3, 5000));
+  ok('[목록에 추가] 클릭 → 다시 들어온 1개가 더 저장되어 3개', await until(async () => (await stored()).length === 3, 5000));
   const links = await stored();
   ok('목록에 영상 링크 3개가 담김 (블로그 제외)', links.length === 3 && links.every((l) => l.platform === 'yt'), links.map((l) => l.url.slice(-12)).join(','));
   ok('썸네일의 통계 배지(VPH)가 아니라 영상 제목이 담김', links.every((l, i) => l.title === '영상 제목 ' + (i + 1)), links.map((l) => l.title).join(' | '));
