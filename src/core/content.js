@@ -948,7 +948,7 @@
     if (!r || !r.ok) { say((r && r.message) || '목록에 추가하지 못했어요'); dlRefresh(); return; }
     for (const it of picked) it.added = true;
     markUrls(new Set(picked.map((it) => keyOf(it.link.url))), dlp.tone || '#C83F55', true);
-    say(`목록에 ${picked.length}개 추가했어요`);
+    say(`${picked.length}개 추가했어요`);   // 짧게: 길면 버튼 묶음이 아래 줄로 밀려 창이 출렁인다
     dlRefresh();
   }
 
