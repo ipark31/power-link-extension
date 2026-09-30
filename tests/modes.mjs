@@ -38,15 +38,16 @@ try {
 
   const ids = async () => (await sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || [])).map((l) => l.url.slice(-1)).sort().join('');
   // 박스 색: 테두리는 링크보다 2px 바깥에 2px 두께 → i번째 카드는 x = 36 + 240*(i-1). 없으면 '', 있으면 색 이름
-  const box = async (i) => {
+  // ring 0 = 안쪽 외곽선(x=36~38), ring 1 = 두 번째 외곽선(1px 띄우고 x=33~35): 두 곳에 들어 있는 링크에만 생긴다
+  const box = async (i, ring = 0) => {
     await page.bringToFront();
-    const png = (await page.screenshot({ clip: { x: 36 + 240 * (i - 1), y: 100, width: 2, height: 2 } })).toString('base64');
+    const png = (await page.screenshot({ clip: { x: (ring ? 33 : 36) + 240 * (i - 1), y: 100, width: 2, height: 2 } })).toString('base64');
     const [r, g, b] = await helper.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.querySelector('canvas'); c.width = 2; c.height = 2; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(0, 0, 1, 1).data]; }, png);
     if (Math.max(r, g, b) - Math.min(r, g, b) < 40) return '';
     if (b > 180 && r < 120) return '파랑';                       // 복사 규칙 #2F6BFF
     if (r > 200 && g < 130 && b < 60) return '주황';              // 새 탭 규칙 #E8590C
     if (r > 160 && g < 110) return '빨강';                        // 다운로드 규칙 #C83F55
-    if (g > 110 && r < 80) return '청록';                         // 저장 규칙 #0E9384
+    if (g > 110 && r < 80) return '청록';                         // (예전 저장 규칙 색 #0E9384: 이제 쓰지 않는다)
     return `기타(${r},${g},${b})`;
   };
   const drag = async (i, key) => {   // i번째 카드만 감싼다. key: 'Control' | 'Shift' | undefined
@@ -96,11 +97,18 @@ try {
   // 다운로드 창에 있는 1번을 Ctrl+드래그: 목록에만 들어가고 다운로드 창(빨간 박스)은 그대로
   await drag(1, 'Control');
   ok('다운로드 창에 있는 영상을 Ctrl+드래그 → 목록에 추가, 다운로드 창은 그대로', await until(async () => (await ids()) === '12') && (await box(1)) === '빨강', `${await ids()}, ${await box(1)}`);
+  ok('다운로드와 목록에 둘 다 있으면 2중 외곽선: 안쪽 빨강 + 바깥 파랑', (await box(1)) === '빨강' && (await box(1, 1)) === '파랑', `안쪽 ${await box(1)}, 바깥 ${await box(1, 1)}`);
   await drag(1, 'Control');
   ok('다시 Ctrl+드래그 → 목록에서만 빠짐, 다운로드 창은 그대로 (빨간 박스 유지)', await until(async () => (await ids()) === '2') && (await box(1)) === '빨강', `${await ids()}, ${await box(1)}`);
+  ok('목록에서 빠지면 바깥 외곽선이 없어짐 (빨강 하나만)', (await box(1, 1)) === '', `바깥 ${await box(1, 1) || '없음'}`);
   // 목록에 있는 2번(다운로드 창에도 있음)을 우클릭 드래그: 다운로드 창에서만 빠지고 목록에는 남는다
   await drag(2);
-  ok('목록에도 있는 영상을 우클릭 드래그 → 다운로드 창에서만 빠짐, 목록에는 남음', (await ids()) === '2' && (await box(2)) !== '빨강' && (await box(2)) !== '', `${await ids()}, ${await box(2)}`);
+  ok('목록에도 있는 영상을 우클릭 드래그 → 다운로드 창에서만 빠짐, 목록에는 남음 (파랑 하나만)', (await ids()) === '2' && (await box(2)) === '파랑' && (await box(2, 1)) === '', `${await ids()}, 안쪽 ${await box(2)}, 바깥 ${await box(2, 1) || '없음'}`);
+  // 자유 선택(Alt, 선 긋기)도 박스 선택(Ctrl)과 같은 파랑
+  await drag(3, 'Alt');
+  ok('Alt+드래그(자유 선택) → 목록에 추가, Ctrl 과 같은 파란 박스', await until(async () => (await ids()) === '23') && (await box(3)) === '파랑', `${await ids()}, ${await box(3)}`);
+  await drag(3, 'Control');
+  ok('Alt 로 넣은 것을 Ctrl+드래그로 뺄 수 있음 (같은 목록)', await until(async () => (await ids()) === '2') && (await box(3)) === '', `${await ids()}, ${await box(3) || '없음'}`);
 
   // ---- 3) 우클릭 + Shift: 새 탭이 열렸다 닫혔다
   const n0 = tabs();

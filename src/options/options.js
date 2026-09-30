@@ -1,6 +1,6 @@
 // Power Link — options page (design/graphite/Settings.dc.html)
 import { getSettings, setSettings, resetSettings, getApiKey, setApiKey, getLinks, setLinks } from '../shared/storage.js';
-import { FIELDS, PLATFORMS, ACTIONS, RULE_COLORS, DEFAULT_SETTINGS, STORAGE } from '../shared/constants.js';
+import { FIELDS, PLATFORMS, ACTIONS, RULE_COLORS, DEFAULT_SETTINGS, STORAGE, isListRule, ruleColor } from '../shared/constants.js';
 import { esc, uid } from '../shared/util.js';
 import { icon, logo, version, send, toast, confirmModal } from '../ui/ui.js';
 import { themeChoice, setTheme, themeReady } from '../ui/theme.js';
@@ -53,7 +53,7 @@ function viewRules() {
       <div class="pl-rule__line">
         <button type="button" role="switch" class="pl-switch" aria-checked="${r.enabled !== false}" data-rule="${i}" data-rk="enabled" aria-label="규칙 사용"></button>
         <span class="pl-rule__keys">${r.mod === 'none' ? '' : `<kbd class="pl-kbd pl-kbd--md">${MOD[r.mod] || r.mod}</kbd><span class="pl-muted">+</span>`}<span>${r.button === 'left' ? '좌클릭' : '우클릭'} 드래그</span></span>
-        <span class="pl-rule__shape"><span class="pl-rule__mark ${r.shape === 'lasso' ? 'pl-rule__mark--lasso' : ''}" style="border-color:${esc(r.color)}" title="규칙 색"></span>${r.shape === 'lasso' ? '선 긋기' : '박스'}</span>
+        <span class="pl-rule__shape"><span class="pl-rule__mark ${r.shape === 'lasso' ? 'pl-rule__mark--lasso' : ''}" style="border-color:${esc(ruleColor(r))}" title="규칙 색"></span>${r.shape === 'lasso' ? '선 긋기' : '박스'}</span>
         ${icon('arrow', 'pl-muted')}
         <span class="pl-rule__action">${ACTIONS[r.action]?.label || ''}${bad.has(r.id) ? '<span class="pl-caption" style="font-weight:400;"> · 단축키가 겹쳐요</span>' : ''}</span>
         <button type="button" class="pl-ibtn pl-ibtn--lg ${ruleEdit === i ? 'is-on' : ''}" data-rule-edit="${i}" aria-label="규칙 편집" aria-expanded="${ruleEdit === i}" title="규칙 편집">${icon('more', 'pl-i--lg')}</button>
@@ -64,7 +64,9 @@ function viewRules() {
         <span class="pl-label">버튼</span>${selectBox(`data-rule="${i}" data-rk="button"`, [['right', '우클릭 드래그'], ['left', '좌클릭 드래그']], r.button, '마우스 버튼', 140)}
         <span class="pl-label">모양</span><div class="pl-seg" role="group" aria-label="모양">${[['box', '박스'], ['lasso', '선 긋기']].map(([v, l]) => `<button type="button" class="pl-seg__item" aria-pressed="${r.shape === v}" data-rule="${i}" data-rk="shape" data-val="${v}">${l}</button>`).join('')}</div>
         <span class="pl-label">동작</span>${selectBox(`data-rule="${i}" data-rk="action"`, Object.entries(ACTIONS).map(([k, a]) => [k, a.label]), r.action, '동작', 140)}
-        <span class="pl-label">색</span><span style="display:flex;gap:8px;">${RULE_COLORS.map((c) => `<button type="button" class="pl-swatch ${r.color === c ? 'is-on' : ''}" data-rule="${i}" data-rk="color" data-val="${c}" aria-label="규칙 색 ${c}" style="background:${c}"></button>`).join('')}</span>
+        <span class="pl-label">색</span>${isListRule(r)
+          ? `<span class="pl-caption" style="display:flex;align-items:center;gap:8px;"><span class="pl-swatch is-on" style="background:${ruleColor(r)};cursor:default"></span>목록에 넣는 규칙은 파랑으로 통일해요</span>`
+          : `<span style="display:flex;gap:8px;">${RULE_COLORS.map((c) => `<button type="button" class="pl-swatch ${r.color === c ? 'is-on' : ''}" data-rule="${i}" data-rk="color" data-val="${c}" aria-label="규칙 색 ${c}" style="background:${c}"></button>`).join('')}</span>`}
         <button type="button" class="pl-btn pl-btn--outline pl-btn--sm pl-push" data-rule-del="${i}">${icon('trash', 'pl-i--sm')}규칙 삭제</button>
       </div>` : ''}
     </div>`).join('')}

@@ -20,7 +20,7 @@
     rules: [
       { id: 'r1', enabled: true, mod: 'ctrl', button: 'right', shape: 'box', action: 'copy', color: '#2F6BFF' },
       { id: 'r2', enabled: true, mod: 'shift', button: 'right', shape: 'box', action: 'tabs', color: '#E8590C' },
-      { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#0E9384' },
+      { id: 'r3', enabled: true, mod: 'alt', button: 'right', shape: 'lasso', action: 'save', color: '#2F6BFF' },
       { id: 'r4', enabled: true, mod: 'none', button: 'right', shape: 'box', action: 'download', color: '#C83F55' }
     ],
     dedupe: true, highlight: true, autoscroll: true, sameSite: false, confirmOver: 20, notify: true, collect: 'title'
@@ -74,6 +74,9 @@
     /* 'hide page marks' (side panel eye button, Alt+Shift+M) hides the boxes of saved links and opened tabs, never the boxes of
        videos in the open download panel: what is in that panel is always outlined on the page. */
     .marks.hide .mark:not(.keep) { display: none !important; }
+    /* a link in two or three places: one more ring per place, 1px apart (see paintMark) */
+    .mark.two { outline: 2px solid var(--tone2); outline-offset: 3px; }
+    .mark.three::after { content: ''; position: absolute; inset: -8px; border-radius: 10px; box-shadow: 0 0 0 2px var(--tone3); }
     .hl { position: absolute; border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); }
     .pill { position: absolute; display: none; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 28px -10px rgba(0,0,0,var(--sh)); white-space: nowrap; }
     .pill b { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px 2px; border-radius: 8px; background: var(--chip); font-size: 14px; line-height: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -447,7 +450,7 @@
   function draw() {
     raf = 0;
     if (!drag) return;
-    const tone = drag.rule.color || '#2F6BFF';
+    const tone = colorOf(drag.rule);
     layer.style.setProperty('--tone', tone);
     const sx = scrollX, sy = scrollY;
     if (drag.rule.shape === 'lasso') {
@@ -500,9 +503,21 @@
   let marks = new Map();
   const GROUP_ORDER = ['dl', 'tabs', 'list'];
   const groupOf = (action) => (action === 'download' ? 'dl' : action === 'tabs' || action === 'window' ? 'tabs' : 'list');
-  const toneOf = (m) => { for (const g of GROUP_ORDER) if (m.groups.has(g)) return m.groups.get(g); return [...m.groups.values()][0]; };
-  // colour of the saved-list box when a link is put in the list from the download panel: the save rule's colour
-  const listTone = () => { const rs = (settings.rules || []).filter((r) => r.enabled !== false); const r = rs.find((x) => x.action === 'save') || rs.find((x) => x.action === 'copy'); return (r && r.color) || '#2F6BFF'; };
+  // Rules that put links in the saved list (copy, save) differ only in how you select (box or free line): one colour, blue.
+  // A colour stored on such a rule is ignored (the save rule used to be teal).
+  const LIST_TONE = '#2F6BFF';
+  const colorOf = (rule) => (groupOf(rule.action) === 'list' ? LIST_TONE : rule.color || (rule.action === 'download' ? '#C83F55' : '#2F6BFF'));
+  // One ring per place the link is in, inside out: download (red), tabs (orange), saved list (blue). So a video that is both
+  // in the download panel and in the saved list shows a red ring with a blue ring around it.
+  function paintMark(m, el) {
+    const tones = [...new Set(GROUP_ORDER.filter((g) => m.groups.has(g)).map((g) => m.groups.get(g)))];
+    el.style.setProperty('--tone', tones[0]);
+    el.style.setProperty('--tone2', tones[1] || 'transparent');
+    el.style.setProperty('--tone3', tones[2] || 'transparent');
+    el.classList.toggle('two', tones.length > 1);
+    el.classList.toggle('three', tones.length > 2);
+    el.classList.toggle('keep', m.groups.has('dl'));   // boxes of the open download panel are never hidden
+  }
   const marksDoc = () => root && root.querySelector('.marks-doc');
   const isMarked = (a, group) => { const m = marks.get(keyOf(a.href)); return !!m && (!group || m.groups.has(group)); };
   function syncMarks() {
@@ -566,11 +581,9 @@
       let m = marks.get(k);
       if (!m) { m = { groups: new Map(), els: new Map() }; marks.set(k, m); }
       m.groups.set(group, tone);
-      const shown = toneOf(m);
       let el = m.els.get(a);
       if (!el) { el = document.createElement('div'); el.className = 'mark'; doc.appendChild(el); m.els.set(a, el); }
-      el.style.setProperty('--tone', shown);
-      el.classList.toggle('keep', m.groups.has('dl'));
+      paintMark(m, el);
       placeOutline(el, a);
     }
     syncMarks();
@@ -612,7 +625,7 @@
       if (!m) continue;
       if (group) {
         m.groups.delete(group);
-        if (m.groups.size) { const t = toneOf(m), keep = m.groups.has('dl'); m.els.forEach((el) => { el.style.setProperty('--tone', t); el.classList.toggle('keep', keep); }); continue; }
+        if (m.groups.size) { m.els.forEach((el) => paintMark(m, el)); continue; }
       }
       m.els.forEach((el) => el.remove());
       marks.delete(k);
@@ -766,7 +779,7 @@
         const r = await send({ type: 'pl:removeUrls', urls: [...offKeys] });   // 사이드바 목록에서만 뺀다
         const n = r && r.ok ? r.count : 0;
         toast({ title: `선택 해제 ${offKeys.size}개${n ? ` · 수집 링크에서 ${n}개 삭제` : ''}`, sub: how,
-          actions: r && r.undoToken ? [{ label: '되돌리기', run: async () => { await send({ type: 'pl:undo', token: r.undoToken }); markUrls(offKeys, rule.color || '#2F6BFF', 'list'); } }] : [] });
+          actions: r && r.undoToken ? [{ label: '되돌리기', run: async () => { await send({ type: 'pl:undo', token: r.undoToken }); markUrls(offKeys, LIST_TONE, 'list'); } }] : [] });
       } else toast({ title: `(연습) 선택 해제 ${offKeys.size}개`, sub: how });
     }
     const links = buildLinks(fresh);
@@ -778,8 +791,8 @@
     const lines = links.slice(0, 3).map((l) => '• ' + (l.title || l.url));
     if (links.length > 3) lines.push(`외 ${links.length - 3}개`);
     if (DEMO) {
-      markUrls(newKeys, rule.color || '#2F6BFF', group);
-      toast({ tone: rule.color, title: `(연습) 링크 ${links.length}개 · ${ACTION_LABEL[rule.action]}`, sub: how + ' · 실제 동작은 하지 않아요', lines });
+      markUrls(newKeys, colorOf(rule), group);
+      toast({ tone: colorOf(rule), title: `(연습) 링크 ${links.length}개 · ${ACTION_LABEL[rule.action]}`, sub: how + ' · 실제 동작은 하지 않아요', lines });
       globalThis.dispatchEvent(new CustomEvent('pl-demo-result', { detail: { count: links.length, action: rule.action } }));
       return;
     }
@@ -794,7 +807,7 @@
     const res = await send({ type: 'pl:grab', action: rule.action, shape: rule.shape, mod: rule.mod, links, page: { url: location.href, title: document.title } });
     if (!res || !res.ok) { toast({ tone: '#F04438', error: true, title: (res && res.message) || '처리하지 못했어요', sub: how }); return; }
     // 탭을 연 링크는 '연 탭' 박스, 복사·저장한 링크는 '목록' 박스. (새 탭 규칙이 목록에도 저장하는 설정이어도 박스는 탭만 나타낸다)
-    markUrls(newKeys, rule.color || '#2F6BFF', group);
+    markUrls(newKeys, colorOf(rule), group);
     if (res.copyPayload && !(await writeClip(res.copyPayload.text, res.copyPayload.html))) {
       toast({ tone: '#F04438', error: true, title: '클립보드에 복사하지 못했어요', sub: '페이지를 한 번 클릭한 뒤 다시 시도해 주세요' });
       return;
@@ -807,7 +820,7 @@
     const shown = Array.isArray(res.titles) && res.titles.length ? res.titles : links.map((l) => l.title || l.url);
     const finalLines = shown.slice(0, 3).map((t) => '• ' + t);
     if (shown.length > 3) finalLines.push(`외 ${shown.length - 3}개`);
-    toast({ tone: rule.color, title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
+    toast({ tone: colorOf(rule), title: res.message, sub: how + (res.note ? ' · ' + res.note : ''), lines: finalLines, actions });
   }
   // ---------------------------------------------------------------- 다운로드 목록창
   // 우클릭 드래그로 고른 영상을 보여 준다. 체크한 것만 받는다.
@@ -1034,7 +1047,7 @@
     const say = (text) => { dlp.note = { text, until: Date.now() + 2500 }; setTimeout(() => dlp && dlRefresh(), 2600); };
     if (!r || !r.ok) { say((r && r.message) || '목록에 추가하지 못했어요'); dlRefresh(); return; }
     for (const it of picked) it.added = true;
-    markUrls(new Set(picked.map((it) => keyOf(it.link.url))), listTone(), 'list');   // 이제 사이드바 목록에도 있다
+    markUrls(new Set(picked.map((it) => keyOf(it.link.url))), LIST_TONE, 'list');   // 이제 사이드바 목록에도 있다
     say(`${picked.length}개 추가했어요`);   // 짧게: 길면 버튼 묶음이 아래 줄로 밀려 창이 출렁인다
     dlRefresh();
   }
