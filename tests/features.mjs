@@ -106,7 +106,11 @@ ok('Esc → 선택 해제', (await sp.locator('.pl-bar__count').innerText()).inc
 
 // 6) recent screens grouped by day
 const day = 864e5, now = Date.now();
-await ext.evaluate(async (rec) => { await chrome.storage.local.set({ pl_recent: rec }); }, [0, 1.1, 3, 20, 60].map((d, i) => ({ url: `https://site${i}.test/`, title: '화면 ' + i, at: now - d * day - 1000 })));
+// 묶음의 기준은 오늘 0시다. 시각을 '지금에서 며칠 전'으로 잡으면 자정 직후(0시~2시 24분)에는 1.1일 전이 그저께가 되어
+// '어제' 묶음이 비므로, 오늘 0시를 기준으로 잡는다: 방금, 어제 23시, 3일 전, 20일 전, 60일 전
+const midnight = new Date(now).setHours(0, 0, 0, 0);
+const recentAt = [Math.max(midnight, now - 1000), midnight - 36e5, midnight - 3 * day, midnight - 20 * day, midnight - 60 * day];
+await ext.evaluate(async (rec) => { await chrome.storage.local.set({ pl_recent: rec }); }, recentAt.map((at, i) => ({ url: `https://site${i}.test/`, title: '화면 ' + i, at })));
 await sp.click('[data-act="tab"][data-val="recent"]'); await wait(700);
 const heads = await sp.$$eval('.pl-recent-list .pl-group', (g) => g.map((x) => x.innerText.trim()));
 ok('최근 화면을 날짜별로 묶음', ['오늘', '어제', '이번 주', '이번 달', '그 이전'].every((h) => heads.includes(h)), heads.join(' | '));
