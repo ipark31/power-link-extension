@@ -294,7 +294,8 @@
   // ---------------------------------------------------------------- titles
   // Thumbnail links (YouTube, blogs, shops) carry only a duration or badge ("8:02", "SHORTS").
   // For those, borrow the title from the card the link sits in, or from another link to the same URL.
-  const WEAK = /^(?:[\d:.\s]+|live|shorts?|쇼츠|지금 재생 중|now playing|재생목록|playlist|ad|광고|new|새 동영상|\d+\s*(?:분|초|시간|개|views?|회)?)$/i;
+  // Button labels on ad cards ("시청", "Watch") are links to the video too, but they are not its title.
+  const WEAK = /^(?:[\d:.\s]+|live|shorts?|쇼츠|지금 재생 중|now playing|재생목록|playlist|ad|광고|new|새 동영상|시청|시청하기|지금 시청|watch|watch now|재생|play|\d+\s*(?:분|초|시간|개|views?|회)?)$/i;
   function isWeakTitle(t) {
     t = text(t);
     return t.length < 2 || WEAK.test(t) || /^(?:[\d:]+\s*)+(?:지금 재생 중|now playing)?$/i.test(t);
