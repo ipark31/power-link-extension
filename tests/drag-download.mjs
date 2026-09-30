@@ -14,10 +14,12 @@ const ok = (n, c, i = '') => R.push(`${c ? 'PASS' : 'FAIL'}  ${n}${i ? '  — ' 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 10000, step = 250) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await fn()) return true; } catch (e) { /* retry */ } await wait(step); } try { return !!(await fn()); } catch (e) { return false; } };
 
+// 썸네일 링크 안의 배지: 다른 확장(vidIQ 등)이 넣는 통계. 제목으로 쓰이면 안 된다
+const BADGES = ['<img alt="" style="width:40px;height:20px"><span>29.7K VPH</span>', '<span>306 VPH 7.5x</span>', '<img alt="" style="width:40px;height:20px"><span>12:34</span><span>1.2M VPH</span>'];
 // 페이지: 유튜브 카드 3개 + 블로그 링크 1개
 const PAGE = `<!doctype html><meta charset="utf-8"><title>drag test</title><body style="margin:0;padding:40px;font-family:sans-serif">
 <div style="display:flex;gap:20px;">
-${[1, 2, 3].map((i) => `<div style="width:220px"><a href="https://www.youtube.com/watch?v=VIDEO000000${i}" style="display:block;height:120px;background:#ccc"></a><a href="https://www.youtube.com/watch?v=VIDEO000000${i}" style="display:block;padding:6px 0">영상 제목 ${i}</a></div>`).join('')}
+${[1, 2, 3].map((i) => `<div style="width:220px"><a href="https://www.youtube.com/watch?v=VIDEO000000${i}" style="display:block;height:120px;background:#ccc">${BADGES[i - 1]}</a><a href="https://www.youtube.com/watch?v=VIDEO000000${i}" style="display:block;padding:6px 0">영상 제목 ${i}</a></div>`).join('')}
 <div style="width:220px"><a href="https://blog.naver.com/x/${1}" style="display:block;height:120px;background:#dde"></a><a href="https://blog.naver.com/x/1" style="display:block;padding:6px 0">블로그 글</a></div>
 </div></body>`;
 const posted = [];
@@ -68,6 +70,7 @@ try {
 
   const links = await sw.evaluate(async () => (await chrome.storage.local.get('pl_links')).pl_links || []);
   ok('드래그 후 영상 링크 3개가 목록에 담김 (블로그 제외)', links.length === 3 && links.every((l) => l.platform === 'yt'), links.map((l) => l.url.slice(-12)).join(','));
+  ok('썸네일의 통계 배지(VPH)가 아니라 영상 제목이 담김', links.every((l, i) => l.title === '영상 제목 ' + (i + 1)), links.map((l) => l.title).join(' | '));
   ok('요청은 아직 안 보냄 (목록창만 뜸)', posted.length === 0);
 
   // 목록창의 [다운로드 3개] 버튼: 창 오른쪽 아래 (right 24 · bottom 24 · 푸터 padding 12 · 버튼 30px)

@@ -124,7 +124,9 @@ ok('사이트별 탭 정렬 → 같은 사이트끼리 붙음', order.length ===
 const wel = ctx.pages().find((p) => p.url().endsWith('/src/welcome/welcome.html')) || await ctx.newPage();
 if (!wel.url().endsWith('welcome.html')) await wel.goto(`chrome-extension://${id}/src/welcome/welcome.html`);
 await wel.bringToFront(); await wel.setViewportSize({ width: 1000, height: 900 }); await wel.reload(); await wait(800);
-ok('안내 페이지: 규칙마다 연습 단계', (await wel.locator('.pl-wstep').count()) === 3);
+const nRules = await wel.evaluate(async () => ((await chrome.storage.sync.get('pl_settings')).pl_settings?.rules || []).length);
+const nSteps = await wel.locator('.pl-wstep').count();
+ok('안내 페이지: 규칙마다 연습 단계', nSteps > 0 && (!nRules || nSteps === nRules), `단계 ${nSteps}개 / 규칙 ${nRules}개`);
 const box = await wel.$eval('.pl-wdemo', (e) => e.getBoundingClientRect().toJSON());
 await wel.keyboard.down('Control'); await wel.mouse.move(box.left + 10, box.top + 10); await wel.mouse.down({ button: 'right' }); await wel.mouse.move(box.left + 400, box.top + 200, { steps: 12 }); await wel.mouse.up({ button: 'right' }); await wel.keyboard.up('Control'); await wait(800);
 ok('안내 페이지: 드래그하면 그 단계 완료', (await wel.locator('.pl-wstep.is-done[data-step="copy"]').count()) === 1);

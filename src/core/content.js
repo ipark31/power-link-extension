@@ -299,6 +299,14 @@
     t = text(t);
     return t.length < 2 || WEAK.test(t) || /^(?:[\d:]+\s*)+(?:지금 재생 중|now playing)?$/i.test(t);
   }
+  // A link wrapped around a thumbnail shows overlay badges, not the title: the duration, or stats that other
+  // extensions inject ("29.7K VPH", "306 VPH 7.5x"). Short text in such a link is never used as the title.
+  const BADGE = /^(?:[\d.,]+\s*[kmb만천억]?\s*(?:vph|x|views?|subs(?:cribers)?|회|조회수)?\s*)+$/i;
+  const THUMB = 'img, picture, video, yt-image, yt-thumbnail-view-model, ytd-thumbnail';
+  function isThumbText(a, t) {
+    if (BADGE.test(t)) return true;
+    return t.length <= 40 && !(a.getAttribute && a.getAttribute('title')) && !!(a.querySelector && a.querySelector(THUMB));
+  }
   function cleanTitle(t) {
     // "8:02 지금 재생 중 Real title" → "Real title"; drop trailing duration badges.
     t = text(t).replace(/^(?:\d{1,2}:)?\d{1,2}:\d{2}\s*(?:지금 재생 중|now playing)?\s*/i, '').replace(/\s*(?:\d{1,2}:)?\d{1,2}:\d{2}$/, '');
@@ -322,7 +330,7 @@
       for (const x of document.querySelectorAll('a[href]')) {
         if (host && host.contains(x)) continue;
         const t = titleFromEl(x);
-        if (isWeakTitle(t)) continue;
+        if (isWeakTitle(t) || isThumbText(x, t)) continue;
         const k = norm(x.href);
         const prev = sameUrlIndex.get(k);
         if (!prev || (t.length > prev.length && t.length < 200)) sameUrlIndex.set(k, t);
@@ -359,6 +367,7 @@
     const img = a.querySelector('img');
     let title = cleanTitle(text(a.getAttribute('title')) || text(a.innerText) || text(a.getAttribute('aria-label')) || text(img && img.alt));
     if (isWeakTitle(title)) title = betterTitle(a, url) || (isWeakTitle(title) ? '' : title);
+    else if (isThumbText(a, title)) title = betterTitle(a, url) || (BADGE.test(title) ? '' : title);
     if (title.length > 300) title = title.slice(0, 300);
     let thumb = '';
     if (c && c.platform === 'yt' && c.videoId) thumb = `https://i.ytimg.com/vi/${c.videoId}/hqdefault.jpg`;
