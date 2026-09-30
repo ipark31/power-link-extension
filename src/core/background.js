@@ -261,17 +261,48 @@ async function copyToClipboard(text, html) {
   }
 }
 
-async function openTabs(urls, { newWindow = false, afterTab = null, background = true } = {}) {
+// Tabs opened by a drag are remembered ({ normalized url: tabId } in chrome.storage.local 'pl_tabsOpen') so that dragging the
+// same links again can close them, and so the page can drop a link's box when its tab is closed by hand.
+const TABS_OPEN = 'pl_tabsOpen';
+let tabsLock = Promise.resolve();
+// one change at a time: several tabs closing at once must not overwrite each other's update
+const withTabsOpen = (fn) => (tabsLock = tabsLock.then(async () => {
+  const m = (await chrome.storage.local.get(TABS_OPEN))[TABS_OPEN] || {};
+  if ((await fn(m)) !== false) await chrome.storage.local.set({ [TABS_OPEN]: m });
+}).catch(() => {}));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  withTabsOpen((m) => { const ks = Object.keys(m).filter((k) => m[k] === tabId); for (const k of ks) delete m[k]; return ks.length > 0; });
+});
+chrome.runtime.onStartup.addListener(() => { chrome.storage.local.remove(TABS_OPEN).catch(() => {}); }); // tab ids do not survive a restart
+async function closeOpenedTabs(urls) {
+  const keys = urls.map((u) => globalThis.PLNormalize(u));
+  let count = 0;
+  await withTabsOpen(async (m) => {
+    for (const k of keys) {
+      const id = m[k];
+      if (id === undefined) continue;
+      delete m[k];
+      try { await chrome.tabs.remove(id); count++; } catch (e) { /* already closed */ }
+    }
+  });
+  return count;
+}
+
+async function openTabs(urls, { newWindow = false, afterTab = null, background = true, track = false } = {}) {
+  const opened = [];
   if (newWindow) {
-    await chrome.windows.create({ url: urls, focused: true });
-    return;
+    const w = await chrome.windows.create({ url: urls, focused: true });
+    (w.tabs || []).forEach((t, i) => { if (urls[i]) opened.push([urls[i], t.id]); });
+  } else {
+    let index = afterTab ? afterTab.index + 1 : undefined;
+    const windowId = afterTab ? afterTab.windowId : undefined;
+    for (const url of urls) {
+      const t = await chrome.tabs.create({ url, active: !background && url === urls[0], windowId, index });
+      opened.push([url, t.id]);
+      if (index !== undefined) index++;
+    }
   }
-  let index = afterTab ? afterTab.index + 1 : undefined;
-  const windowId = afterTab ? afterTab.windowId : undefined;
-  for (const url of urls) {
-    await chrome.tabs.create({ url, active: !background && url === urls[0], windowId, index });
-    if (index !== undefined) index++;
-  }
+  if (track && opened.length) await withTabsOpen((m) => { for (const [url, id] of opened) m[globalThis.PLNormalize(url)] = id; });
 }
 
 async function enrichIfNeeded(items, mode) {
@@ -391,10 +422,10 @@ async function runAction({ action, links, sourceTab, source, modeOverride, viaPa
     if (!done) copyPayload = { text, html };
     message = `링크 ${items.length}개를 복사했어요`;
   } else if (action === 'tabs') {
-    await openTabs(items.map((i) => i.url), { afterTab: sourceTab, background: settings.bgTabs !== false });
+    await openTabs(items.map((i) => i.url), { afterTab: sourceTab, background: settings.bgTabs !== false, track: true });
     message = `새 탭 ${items.length}개를 열었어요`;
   } else if (action === 'window') {
-    await openTabs(items.map((i) => i.url), { newWindow: true });
+    await openTabs(items.map((i) => i.url), { newWindow: true, track: true });
     message = `새 창에 링크 ${items.length}개를 열었어요`;
   } else if (action === 'save') {
     message = `링크 ${items.length}개를 목록에 저장했어요`;
@@ -756,6 +787,7 @@ const handlers = {
   },
 
   // page drag deselected already-outlined links → take them out of the side-panel list
+  'pl:closeTabs': async (msg) => ({ ok: true, count: await closeOpenedTabs(msg.urls || []) }),
   'pl:removeUrls': async (msg) => {
     const keys = new Set((msg.urls || []).map((u) => globalThis.PLNormalize(u)));
     const before = await getLinks();

@@ -490,9 +490,18 @@
   // Deleting a link in the side panel removes its outline here too (storage sync).
   const keyOf = (u) => (globalThis.PLNormalize ? globalThis.PLNormalize(u) : u);
   let marksHref = '', marksRaf = 0, marksTimer = 0;
-  let marks = new Map(); // url key → { tone, saved, els: Map(anchor → outline div) }
+  // url key → { groups: Map(group → tone), els: Map(anchor → outline div) }
+  // A box remembers the drag mode that made it: 'dl' = in the download panel, 'list' = in the saved list (side panel),
+  // 'tabs' = opened in a tab. A link can be in several. Each mode puts in and takes out only its own membership, and the
+  // box goes away when none is left. The colour shown is the download one first, then tabs, then list.
+  let marks = new Map();
+  const GROUP_ORDER = ['dl', 'tabs', 'list'];
+  const groupOf = (action) => (action === 'download' ? 'dl' : action === 'tabs' || action === 'window' ? 'tabs' : 'list');
+  const toneOf = (m) => { for (const g of GROUP_ORDER) if (m.groups.has(g)) return m.groups.get(g); return [...m.groups.values()][0]; };
+  // colour of the saved-list box when a link is put in the list from the download panel: the save rule's colour
+  const listTone = () => { const rs = (settings.rules || []).filter((r) => r.enabled !== false); const r = rs.find((x) => x.action === 'save') || rs.find((x) => x.action === 'copy'); return (r && r.color) || '#2F6BFF'; };
   const marksDoc = () => root && root.querySelector('.marks-doc');
-  const isMarked = (a) => marks.has(keyOf(a.href));
+  const isMarked = (a, group) => { const m = marks.get(keyOf(a.href)); return !!m && (!group || m.groups.has(group)); };
   function syncMarks() {
     marksRaf = 0;
     const doc = marksDoc();
@@ -537,7 +546,7 @@
     el.style.width = r.width + 4 + 'px'; el.style.height = r.height + 4 + 'px';
     return true;
   }
-  function markUrls(keys, tone, saved) {
+  function markUrls(keys, tone, group) {
     if (!keys.size) return;
     ensureOverlay();
     if (marksHref !== location.href) { clearMarks(); marksHref = location.href; }
@@ -552,11 +561,12 @@
       const r = a.getBoundingClientRect();
       if (!r.width && !r.height) continue; // hidden duplicates
       let m = marks.get(k);
-      if (!m) { m = { tone, saved, els: new Map() }; marks.set(k, m); }
-      m.tone = tone; m.saved = m.saved || saved;
+      if (!m) { m = { groups: new Map(), els: new Map() }; marks.set(k, m); }
+      m.groups.set(group, tone);
+      const shown = toneOf(m);
       let el = m.els.get(a);
       if (!el) { el = document.createElement('div'); el.className = 'mark'; doc.appendChild(el); m.els.set(a, el); }
-      el.style.setProperty('--tone', tone);
+      el.style.setProperty('--tone', shown);
       placeOutline(el, a);
     }
     syncMarks();
@@ -580,7 +590,7 @@
       }
       if (!m.els.size) rebind.push([k, m]);
     }
-    for (const [k, m] of rebind) markUrls(new Set([k]), m.tone, m.saved);
+    for (const [k, m] of rebind) for (const [g, t] of [...m.groups]) markUrls(new Set([k]), t, g);
     syncMarks();
   }
   function scheduleRelayout() { if (marks.size && !relayoutRaf) relayoutRaf = requestAnimationFrame(relayoutMarks); }
@@ -591,10 +601,15 @@
     if (document.body) layoutRO.observe(document.body);
   }
   addEventListener('resize', scheduleRelayout, { passive: true });
-  function unmarkUrls(keys) {
+  // Take links out of one mode's boxes (or out of all when no group is given). A link still in another mode keeps its box.
+  function unmarkUrls(keys, group) {
     for (const k of keys) {
       const m = marks.get(k);
       if (!m) continue;
+      if (group) {
+        m.groups.delete(group);
+        if (m.groups.size) { const t = toneOf(m); m.els.forEach((el) => el.style.setProperty('--tone', t)); continue; }
+      }
       m.els.forEach((el) => el.remove());
       marks.delete(k);
     }
@@ -612,14 +627,22 @@
     chrome.storage.local.get('pl_showMarks', (r) => { if (!chrome.runtime.lastError && r && r.pl_showMarks === false) { showMarks = false; applyShowMarks(); } });
     chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.pl_showMarks) { showMarks = ch.pl_showMarks.newValue !== false; applyShowMarks(); } });
   } catch (e) { /* extension context invalidated */ }
-  // side panel deleted links → drop their outlines (only outlines whose link went into the list)
+  // Keep the boxes in step with what actually exists:
+  //   a link deleted in the side panel leaves the saved list → its 'list' box goes;
+  //   a tab opened by a drag gets closed → its 'tabs' box goes.
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area !== 'local' || !ch.pl_links) return;
-      const keep = new Set((ch.pl_links.newValue || []).map((l) => keyOf(l.url)));
-      if (marks.size) unmarkUrls([...marks.entries()].filter(([k, m]) => m.saved && !keep.has(k)).map(([k]) => k));
-      // 다운로드 목록창: 어떤 영상이 수집 링크 목록에 있는지 ([목록에 추가] 버튼이 이 값으로 켜지고 꺼진다)
-      if (dlp) { for (const [k, it] of dlp.items) it.added = keep.has(k); dlRefresh(); }
+      if (area !== 'local') return;
+      if (ch.pl_links) {
+        const keep = new Set((ch.pl_links.newValue || []).map((l) => keyOf(l.url)));
+        if (marks.size) unmarkUrls([...marks.entries()].filter(([k, m]) => m.groups.has('list') && !keep.has(k)).map(([k]) => k), 'list');
+        // download panel: which videos are in the saved list (the [목록에 추가] button follows this)
+        if (dlp) { for (const [k, it] of dlp.items) it.added = keep.has(k); dlRefresh(); }
+      }
+      if (ch.pl_tabsOpen && marks.size) {
+        const open = new Set(Object.keys(ch.pl_tabsOpen.newValue || {}));
+        unmarkUrls([...marks.entries()].filter(([k, m]) => m.groups.has('tabs') && !open.has(k)).map(([k]) => k), 'tabs');
+      }
     });
   } catch (e) { /* extension context invalidated */ }
   function clearDrawing() {
@@ -708,34 +731,43 @@
     const hits = computeHitsFor(d);
     const rule = d.rule;
     const how = `${MOD_LABEL[rule.mod] ? MOD_LABEL[rule.mod] + ' + ' : ''}드래그 · ${SHAPE_LABEL[rule.shape]}`;
-    // toggle: outlined links are deselected (outline off + removed from the list), the rest are selected
+    // Toggle, per drag mode: a link that is already in THIS mode's target is taken out, the others are put in.
+    //   download → the download panel     save / copy → the saved list (side panel)     tabs / window → the tabs it opened
+    // A mode never touches another mode's target: a plain right-drag leaves the saved list alone, a Ctrl/Alt-drag leaves the
+    // download panel alone, a Shift-drag only opens and closes its tabs.
+    const group = groupOf(rule.action);
     const fresh = new Set(), off = new Set();
-    // 영상 다운로드도 같은 토글이다: 박스가 있는 링크를 다시 감싸면 박스를 지우고 수집 링크 목록에서 뺀다.
-    // 받는 중인 영상은 건드리지 않는다 (멈추려면 목록창의 [다운로드 중지])
-    const busy = (h) => { const it = dlp && dlp.items.get(keyOf(h.a.href)); return !!it && (dlp.sending || dlRunning(it)); };
-    for (const h of hits) { if (isMarked(h.a)) { if (!busy(h)) off.add(h); } else fresh.add(h); }
+    // a video that is being downloaded stays where it is (stop it with [다운로드 중지])
+    const busy = (h) => { const it = group === 'dl' && dlp && dlp.items.get(keyOf(h.a.href)); return !!it && (dlp.sending || dlRunning(it)); };
+    for (const h of hits) { if (isMarked(h.a, group)) { if (!busy(h)) off.add(h); } else fresh.add(h); }
     const offKeys = new Set([...off].map((h) => keyOf(h.a.href)));
-    if (offKeys.size) {
-      unmarkUrls(offKeys);
-      dlDropRows(offKeys);   // 다운로드 목록창에 올라 있으면 거기서도 뺀다
+    if (offKeys.size && group === 'dl') {
+      dlDrop(offKeys);   // 다운로드 창에서만 뺀다
+    } else if (offKeys.size && group === 'tabs') {
+      unmarkUrls(offKeys, 'tabs');
       if (!DEMO) {
-        const r = await send({ type: 'pl:removeUrls', urls: [...offKeys] });
+        const r = await send({ type: 'pl:closeTabs', urls: [...offKeys] });   // 이 드래그로 열었던 탭을 닫는다
+        toast({ title: `탭 ${r && r.ok ? r.count : 0}개를 닫았어요`, sub: how });
+      } else toast({ title: `(연습) 선택 해제 ${offKeys.size}개`, sub: how });
+    } else if (offKeys.size) {
+      unmarkUrls(offKeys, 'list');
+      if (!DEMO) {
+        const r = await send({ type: 'pl:removeUrls', urls: [...offKeys] });   // 사이드바 목록에서만 뺀다
         const n = r && r.ok ? r.count : 0;
         toast({ title: `선택 해제 ${offKeys.size}개${n ? ` · 수집 링크에서 ${n}개 삭제` : ''}`, sub: how,
-          actions: r && r.undoToken ? [{ label: '되돌리기', run: async () => { await send({ type: 'pl:undo', token: r.undoToken }); markUrls(offKeys, rule.color || '#2F6BFF', true); } }] : [] });
+          actions: r && r.undoToken ? [{ label: '되돌리기', run: async () => { await send({ type: 'pl:undo', token: r.undoToken }); markUrls(offKeys, rule.color || '#2F6BFF', 'list'); } }] : [] });
       } else toast({ title: `(연습) 선택 해제 ${offKeys.size}개`, sub: how });
     }
     const links = buildLinks(fresh);
     if (!links.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 링크가 없어요', sub: how }); return; }
     const newKeys = new Set(links.map((l) => keyOf(l.url)));
-    const saves = rule.action === 'save' || settings.alsoSave !== false;
     if ((rule.action === 'tabs' || rule.action === 'window') && links.length > (settings.confirmOver || 20)) {
       if (!(await pageConfirm(rule.action === 'tabs' ? '새 탭으로 열기' : '새 창으로 열기', `링크 ${links.length}개를 ${rule.action === 'tabs' ? '새 탭' : '새 창'}으로 열까요?`, '열기'))) return;
     }
     const lines = links.slice(0, 3).map((l) => '• ' + (l.title || l.url));
     if (links.length > 3) lines.push(`외 ${links.length - 3}개`);
     if (DEMO) {
-      markUrls(newKeys, rule.color || '#2F6BFF', false);
+      markUrls(newKeys, rule.color || '#2F6BFF', group);
       toast({ tone: rule.color, title: `(연습) 링크 ${links.length}개 · ${ACTION_LABEL[rule.action]}`, sub: how + ' · 실제 동작은 하지 않아요', lines });
       globalThis.dispatchEvent(new CustomEvent('pl-demo-result', { detail: { count: links.length, action: rule.action } }));
       return;
@@ -743,18 +775,15 @@
     if (rule.action === 'download') {
       const vids = links.filter(dlOk);
       if (!vids.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리 게시물 링크만 받을 수 있어요' }); return; }
-      // 드래그하면 박스가 생기고 수집 링크 목록에 바로 들어간다 (다른 수집 규칙과 같다). 받을 영상은 목록창에서 고른다
-      const r = await send({ type: 'pl:grab', action: 'download', shape: rule.shape, mod: rule.mod, links: vids, page: { url: location.href, title: document.title } });
-      if (!r || !r.ok) { toast({ tone: '#F04438', error: true, title: (r && r.message) || '처리하지 못했어요', sub: how }); return; }
-      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', true);
+      // 우클릭 드래그는 다운로드 창만 다룬다. 사이드바 목록에는 목록창의 [목록에 추가] 를 눌러야 들어간다
+      markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', 'dl');
       openDlPanel(vids, rule.color || '#C83F55');
-      for (const l of vids) { const it = dlp && dlp.items.get(keyOf(l.url)); if (it) it.added = true; }
-      dlRefresh();
       return;
     }
     const res = await send({ type: 'pl:grab', action: rule.action, shape: rule.shape, mod: rule.mod, links, page: { url: location.href, title: document.title } });
     if (!res || !res.ok) { toast({ tone: '#F04438', error: true, title: (res && res.message) || '처리하지 못했어요', sub: how }); return; }
-    markUrls(newKeys, rule.color || '#2F6BFF', saves);
+    // 탭을 연 링크는 '연 탭' 박스, 복사·저장한 링크는 '목록' 박스. (새 탭 규칙이 목록에도 저장하는 설정이어도 박스는 탭만 나타낸다)
+    markUrls(newKeys, rule.color || '#2F6BFF', group);
     if (res.copyPayload && !(await writeClip(res.copyPayload.text, res.copyPayload.html))) {
       toast({ tone: '#F04438', error: true, title: '클립보드에 복사하지 못했어요', sub: '페이지를 한 번 클릭한 뒤 다시 시도해 주세요' });
       return;
@@ -781,18 +810,21 @@
   const DL_DONE = { completed: 1, error: 1, failed: 1, cancelled: 1 };
   const dlSent = (it) => !!it.taskId;
   const dlRunning = (it) => dlSent(it) && !DL_DONE[it.status];
-  // 다운로드 목록창에서 줄을 뺀다. 받는 중인 영상은 그대로 둔다. 비면 창을 닫는다
-  function dlDropRows(keys) {
-    if (!dlp || dlp.sending) return;
-    let n = 0;
-    for (const k of keys) { const it = dlp.items.get(k); if (!it || dlRunning(it)) continue; it.row.remove(); dlp.items.delete(k); n++; }
-    if (!n) return;
-    if (!dlp.items.size) closeDlPanel(); else dlRefresh();
+  // 다운로드 창에서 영상을 뺀다: 줄과 '다운로드' 박스가 함께 없어진다. 받는 중인 영상은 그대로 둔다.
+  // 사이드바 목록은 건드리지 않는다 (목록에도 있는 영상은 '목록' 박스가 남는다)
+  function dlDrop(keys) {
+    const gone = new Set();
+    if (!dlp) for (const k of keys) gone.add(k);
+    else if (!dlp.sending) for (const k of keys) { const it = dlp.items.get(k); if (it && dlRunning(it)) continue; if (it) { it.row.remove(); dlp.items.delete(k); } gone.add(k); }
+    unmarkUrls(gone, 'dl');
+    if (dlp && gone.size) { if (!dlp.items.size) closeDlPanel(); else dlRefresh(); }
+    return gone.size;
   }
   function closeDlPanel() {
     if (!dlp) return;
     if (dlp.sending || [...dlp.items.values()].some(dlRunning)) return; // 받는 중에는 닫지 않는다
     clearTimeout(dlp.timer);
+    unmarkUrls(new Set(dlp.items.keys()), 'dl');   // 창이 닫히면 '다운로드' 박스도 없어진다
     const el = dlp.el; dlp = null;
     el.classList.add('out'); setTimeout(() => el.remove(), 200);
   }
@@ -985,19 +1017,14 @@
     const say = (text) => { dlp.note = { text, until: Date.now() + 2500 }; setTimeout(() => dlp && dlRefresh(), 2600); };
     if (!r || !r.ok) { say((r && r.message) || '목록에 추가하지 못했어요'); dlRefresh(); return; }
     for (const it of picked) it.added = true;
-    markUrls(new Set(picked.map((it) => keyOf(it.link.url))), dlp.tone || '#C83F55', true);
+    markUrls(new Set(picked.map((it) => keyOf(it.link.url))), listTone(), 'list');   // 이제 사이드바 목록에도 있다
     say(`${picked.length}개 추가했어요`);   // 짧게: 길면 버튼 묶음이 아래 줄로 밀려 창이 출렁인다
     dlRefresh();
   }
 
   function deleteChecked() {
     if (!dlp || [...dlp.items.values()].some(dlRunning)) return;
-    const picked = [...dlp.items.entries()].filter(([, it]) => dlChecked(it));
-    if (!picked.length) return;
-    for (const [k, it] of picked) { it.row.remove(); dlp.items.delete(k); }
-    unmarkUrls(new Set(picked.filter(([, it]) => !it.added).map(([k]) => k)));   // 박스는 수집 링크 목록과 짝: 목록에 있는 영상의 박스는 남긴다
-    if (!dlp.items.size) { closeDlPanel(); return; }
-    dlRefresh();
+    dlDrop(new Set([...dlp.items.entries()].filter(([, it]) => dlChecked(it)).map(([k]) => k)));
   }
 
   async function writeClip(text, html) {

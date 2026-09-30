@@ -33,6 +33,7 @@ try {
   // 페이지 위 목록창: 우클릭 드래그로 연다
   const web = await ctx.newPage();
   await web.goto('http://127.0.0.1:8783/'); await wait(800);
+  await web.bringToFront(); await web.mouse.move(600, 500); await web.mouse.move(610, 510); await wait(700);   // 사용자가 페이지 위에서 마우스를 움직인 상태: 드래그 엔진이 미리 올라온다
   await web.bringToFront();
   await web.mouse.move(20, 20); await web.mouse.down({ button: 'right' });
   await web.mouse.move(200, 100, { steps: 6 }); await web.mouse.move(320, 240, { steps: 8 }); await wait(150);
