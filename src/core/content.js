@@ -91,11 +91,12 @@
     .dlp-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 14px; border-bottom: 1px solid #262626; }
     .dlp-h .ic { background: var(--tone, #C83F55); margin-top: 0; }
     .dlp-h .tt { flex: 1; }
-    .dlp-h .x, .dlp-h .cfg { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
-    .dlp-h .x:hover, .dlp-h .cfg:hover { background: #272727; color: #F1F1F1; }
+    .dlp-h .x, .dlp-h .cfg, .dlp-h .lst { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: #AAAAAA; display: grid; place-items: center; }
+    .dlp-h .x:hover, .dlp-h .cfg:hover, .dlp-h .lst:hover { background: #272727; color: #F1F1F1; }
     .dlp-h .x:disabled, .dlp-h .cfg:disabled { opacity: .3; cursor: not-allowed; background: none; }
     .dlp-h .x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
-    .dlp-h .cfg { margin-right: -4px; }
+    .dlp-h .cfg, .dlp-h .lst { margin-right: -4px; }
+    .dlp-h .lst svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
     .dlp-h .cfg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
     .dlp-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
     .dlp-row { display: grid; grid-template-columns: 18px 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
@@ -836,12 +837,13 @@
       const el = document.createElement('div');
       el.className = 'dlp';
       el.style.setProperty('--tone', tone || '#C83F55');
-      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="lst" aria-label="목록 보기" title="수집 링크 목록 보기 (사이드바 열기)"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
         <div class="dlp-f"><div class="dlp-where">${escH(dlWhere())}</div><div class="dlp-bar"><span></span></div>
           <div class="dlp-acts"><span class="n"></span><span class="dlp-btns"><button type="button" class="add" title="체크한 영상을 수집 링크 목록에 저장해요">목록에 추가</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></span></div></div>`;
       el.querySelector('.x').addEventListener('click', closeDlPanel);
       el.querySelector('.cfg').addEventListener('click', () => send({ type: 'pl:openOptions' }));
+      el.querySelector('.lst').addEventListener('click', () => send({ type: 'pl:openSidePanel' })); // 보기만 하므로 받는 중에도 쓸 수 있다
       el.querySelector('.add').addEventListener('click', addToList);
       el.querySelector('.pri').addEventListener('click', startDl);
       el.querySelector('.del').addEventListener('click', deleteChecked);

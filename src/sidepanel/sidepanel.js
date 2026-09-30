@@ -6,7 +6,6 @@ import { esc, compactKo, timeAgo, fmtDate, fmtDuration } from '../shared/util.js
 import { buildXls, keywordStats } from '../shared/format.js';
 import { icon, ytLogo, avatar, send, toast, writeClipboard, confirmModal, memoModal, collectionModal } from '../ui/ui.js';
 import { currentTheme, setTheme, themeReady } from '../ui/theme.js';
-import { makeZip, safeFileName } from '../shared/zip.js';
 
 const app = document.getElementById('app');
 const S = {
@@ -26,7 +25,7 @@ const PLAT_FILTERS = [['all', '전체'], ['yt', '유튜브'], ['tt', '틱톡'], 
 const KINDS = [['all', '종류'], ['post', '게시물·영상'], ['account', '채널·계정']];
 const SORTS = [['recent', '최근 수집순'], ['outlier', '떡상 점수순'], ['views', '조회수순'], ['channel', '채널별 묶기'], ['title', '제목순']];
 const BAR_ACTIONS = [
-  ['bCopy', 'copy', '복사'], ['bOpen', 'external', '새 탭으로 열기'], ['bThumbs', 'image', '썸네일 압축 저장'],
+  ['bCopy', 'copy', '복사'], ['bOpen', 'external', '새 탭으로 열기'],
   ['bColl', 'folder', '컬렉션에 넣기'], ['bWatch', 'eye', '워치리스트에 추가'], ['bBookmark', 'bookmark', '북마크에 추가'], ['bExcel', 'download', '엑셀 다운로드'],
   ['bDownload', 'filmDown', '영상 다운로드 (다운로더 서버로 보내 정한 폴더에 저장)'],
   ['bDelete', 'trash', '목록에서 삭제']
@@ -695,63 +694,6 @@ function downloadXls(items) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-// All thumbnails in one ZIP (one download instead of a save dialog per image).
-// File name inside the ZIP: video title for posts, channel/account name for channel links.
-async function fetchImage(urls) {
-  for (const u of urls) {
-    try {
-      const r = await fetch(u);
-      if (!r.ok) continue;
-      const buf = new Uint8Array(await r.arrayBuffer());
-      if (buf.length < 1200 && /i\.ytimg\.com/.test(u)) continue; // YouTube's grey "no image" placeholder
-      const type = r.headers.get('content-type') || '';
-      const ext = /png/.test(type) ? 'png' : /webp/.test(type) ? 'webp' : /gif/.test(type) ? 'gif' : 'jpg';
-      return { buf, ext };
-    } catch (e) { /* try next */ }
-  }
-  return null;
-}
-async function saveThumbsZip(items) {
-  const list = items.filter((l) => l.thumb || l.ids?.videoId);
-  if (!list.length) { toast('저장할 썸네일이 없어요', 'warning'); return; }
-  toast(`썸네일 ${list.length}개를 모으는 중…`, 'warning');
-  const used = new Map();
-  const files = [];
-  let i = 0;
-  const worker = async () => {
-    while (i < list.length) {
-      const it = list[i++];
-      const vid = it.ids?.videoId;
-      const urls = vid && it.kind !== 'account'
-        ? [`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${vid}/sddefault.jpg`, it.thumb, `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`]
-        : [it.thumb];
-      const img = await fetchImage(urls.filter(Boolean));
-      if (!img) continue;
-      const base = safeFileName(it.kind === 'account' ? (it.account?.name || it.title) : (it.title || it.account?.name), 'thumbnail');
-      files.push({ order: list.indexOf(it), base, ext: img.ext, data: img.buf });
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker));
-  if (!files.length) { toast('썸네일을 가져오지 못했어요', 'error'); return; }
-  files.sort((a, b) => a.order - b.order);
-  for (const f of files) { // number duplicates in list order: 제목.jpg, 제목 (2).jpg …
-    const n = (used.get(f.base) || 0) + 1;
-    used.set(f.base, n);
-    f.name = `${n > 1 ? `${f.base} (${n})` : f.base}.${f.ext}`;
-  }
-  const url = URL.createObjectURL(makeZip(files));
-  const d = new Date(), p = (x) => String(x).padStart(2, '0');
-  const filename = `PowerLink_썸네일_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.zip`;
-  try {
-    await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: 'uniquify' });
-  } catch (e) {
-    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-  const miss = list.length - files.length;
-  toast(`썸네일 ${files.length}개를 압축 파일 하나로 저장했어요${miss ? ` (${miss}개는 가져오지 못함)` : ''}`);
-}
-
 // Delete without asking first: the toast offers 되돌리기 for 6 seconds. Undo puts the removed links
 // back at their old positions (changes made meanwhile, e.g. details arriving, are kept).
 async function deleteLinks(ids) {
@@ -884,7 +826,6 @@ app.addEventListener('click', async (e) => {
     case 'options': chrome.runtime.openOptionsPage(); return;
     case 'bCopy': { const r = await send({ type: 'pl:copyItems', ids: targetIds() }); if (r.ok && r.copyPayload && !(await writeClipboard(r.copyPayload.text, r.copyPayload.html))) { toast('클립보드에 복사하지 못했어요', 'error'); return; } report(r); return; }
     case 'bOpen': { const urls = selected().map((l) => l.url); if (urls.length > (settings.confirmOver || 20) && !(await confirmModal({ title: '새 탭으로 열기', message: `탭 ${urls.length}개를 새로 열까요?`, ok: '열기' }))) return; await send({ type: 'pl:openUrls', urls }); return; }
-    case 'bThumbs': await saveThumbsZip(selected()); return;
     case 'bWatch': report(await send({ type: 'pl:watchAdd', ids: targetIds() })); return;
     case 'bBookmark': await bookmark(selected()); return;
     case 'bExcel': downloadXls(selected()); toast('엑셀 파일을 저장했어요'); return;

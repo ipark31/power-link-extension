@@ -18,7 +18,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const row = (title, cls, status, pct) => `<div class="dlp-row"><input type="checkbox" checked><span class="dlp-th"></span><span class="dlp-b"><div class="dlp-t">${title}</div><div class="dlp-line"><div class="dlp-pb ${cls}"><span style="width:${pct}%"></span></div><div class="dlp-m ${status[0]}">${status[1]}</div></div></span></div>`;
 const MARKUP = `
-<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="cfg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="lst"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div class="dlp-list">${row('왕초보 유튜버가 4000시간을 넘기는 현실적인 방법 (유튜브 8000시간)', 'idle', ['host', 'youtube.com'], 0)}${row('짧은 제목', '', ['run', '42%'], 42)}${row('합치는 영상', '', ['run', '합치는 중'], 100)}${row('끝난 영상', 'ok', ['ok', '완료'], 100)}</div>
   <div class="dlp-f"><div class="dlp-where">저장 위치: 다운로드 폴더 › PowerLink · 영상+음성 · 최고 화질</div><div class="dlp-bar on"><span style="width:40%"></span></div>
   <div class="dlp-acts"><span class="n">7개 중 7개 선택</span><span class="dlp-btns"><button type="button" class="add">목록에 추가</button><button type="button" class="del">선택 삭제 7</button><button type="button" class="pri">다운로드 7개</button></span></div></div></div>
@@ -103,6 +103,8 @@ try {
   check('목록창 닫기(×) ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .x')) - hic);
   check('목록창 아이콘 안 화살표', (await ink('#p1 .dlp-h .ic')).cy - hic);
   check('목록창 닫기(×) 안 그림', (await ink('#p1 .dlp-h .x')).cy - mid(await boxOf('#p1 .dlp-h .x')));
+  check('목록창 목록 보기 ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .lst')) - hic);
+  check('목록창 목록 보기 안 그림', (await ink('#p1 .dlp-h .lst')).cy - mid(await boxOf('#p1 .dlp-h .lst')));
   check('목록창 설정(톱니바퀴) ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .cfg')) - hic);
   check('목록창 설정(톱니바퀴) 안 그림', (await ink('#p1 .dlp-h .cfg')).cy - mid(await boxOf('#p1 .dlp-h .cfg')));
   // 아래 버튼 줄이 창 너비 안에 들어가는지, 글자가 잘리지 않는지
