@@ -733,6 +733,17 @@ const handlers = {
       concurrency: Number(dl.concurrency) || 2,
       referer: msg.referer || null
     };
+    // 인스타그램은 로그인해야 받을 수 있는 게시물이 많다. 그 링크에만 그 사이트 쿠키를 붙인다
+    // (사이트가 섞인 요청에서 로그인 쿠키가 다른 사이트로 건너가지 않게 주소별로 보낸다)
+    const itemCookies = {};
+    for (const u of urls) {
+      try {
+        if (!/(^|\.)instagram\.com$/i.test(new URL(u).hostname)) continue;
+        const cs = await chrome.cookies.getAll({ url: u });
+        if (cs.length) itemCookies[u] = cs.map((c) => c.name + '=' + c.value).join('; ');
+      } catch (e) { /* 쿠키를 못 읽으면 쿠키 없이 보낸다 */ }
+    }
+    if (Object.keys(itemCookies).length) body.item_cookies = itemCookies;
     const batch = await dlFetch('/batch', { method: 'POST', body: JSON.stringify(body) });
     await dlTrack(batch.batch_id);
     return { ok: true, batch, message: `${batch.total}개 다운로드를 시작했어요` };

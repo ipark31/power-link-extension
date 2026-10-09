@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Power Link v2.9.11",
-  "version": "2.9.11",
-  "version_name": "2.9.11",
+  "name": "Power Link v2.9.12",
+  "version": "2.9.12",
+  "version_name": "2.9.12",
   "description": "드래그로 링크를 모으고, 유튜브·틱톡·인스타그램·X·블로그 링크를 카드·표로 정리하는 크리에이터용 링크 수집기.",
   "author": "ipark31",
   "minimum_chrome_version": "116",
-  "permissions": ["tabs", "storage", "scripting", "bookmarks", "sidePanel", "offscreen", "downloads", "alarms", "clipboardWrite", "nativeMessaging"],
+  "permissions": ["tabs", "storage", "scripting", "bookmarks", "sidePanel", "offscreen", "downloads", "alarms", "clipboardWrite", "nativeMessaging", "cookies"],
   "host_permissions": ["<all_urls>"],
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "action": {

@@ -11,7 +11,8 @@
   const ACTION_LABEL = { copy: '복사', tabs: '새 탭으로 열기', window: '새 창으로 열기', save: '목록에 저장', download: '영상 다운로드' };
   // 다운로더 서버가 받을 수 있는 게시물 링크 (계정/채널·블로그·X 제외)
   const DL_HOSTS = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|vimeo\.com|bilibili\.com|instagram\.com)$/i;
-  const dlOk = (l) => l && l.kind !== 'account' && DL_HOSTS.test((l.domain || '').replace(/^(www|m)\./, ''));
+  // 인스타그램은 게시물(/p/, /reel/, /tv/)만 — 가입·로그인 안내 같은 다른 인스타 링크는 영상이 아니다
+  const dlOk = (l) => l && l.kind !== 'account' && DL_HOSTS.test((l.domain || '').replace(/^(www|m)\./, '')) && (l.platform !== 'ig' || !!(l.ids && l.ids.postId));
   const SHAPE_LABEL = { box: '박스', lasso: '선 긋기' };
   const MOD_LABEL = { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', none: '' };
   const IS_WIN = /Win/i.test(navigator.platform || navigator.userAgent);
@@ -219,6 +220,7 @@
     const pc = playerCandidate();
     if (pc) out.push(pc);
     for (const c of tiktokCandidates()) out.push(c);
+    for (const c of instagramCandidates()) out.push(c);
     return out;
   }
   // The YouTube video player has no link on it: dragging over any part of it selects the video
@@ -275,6 +277,69 @@
       a.href = 'https://www.tiktok.com/@' + (user || '_') + '/video/' + id;
       a.setAttribute('title', text(desc ? desc.innerText : '') || (user ? '@' + user + ' 틱톡 영상' : '틱톡 영상'));
       if (v.poster) { const im = document.createElement('img'); im.src = v.poster; a.appendChild(im); }
+      out.push({ a, el: v, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
+    }
+    return out;
+  }
+  // 인스타그램 릴스·게시물의 영상에도 링크(a)가 없다. 주소는
+  //   1) 주소창이 릴스·게시물(/reels/코드, /reel/코드, /p/코드, /계정/reel/코드)이면 화면에 가장 크게 보이는 영상 = 그 코드
+  //   2) 아니면(홈 피드 등) 영상을 감싼 가장 가까운 상자 안의 게시물 링크(/p/코드/, 댓글 주소 /p/코드/c/…)
+  // 로 만든다. 상자 안에 서로 다른 게시물 링크가 섞여 있으면 어느 영상인지 알 수 없으므로 건너뛴다.
+  const IG_POST = /^\/(?:[A-Za-z0-9_.]+\/)?(?:p|reels?|tv)\/([A-Za-z0-9_-]{5,})(?:\/|$)/;
+  const igCode = (href) => {
+    try { const m = new URL(href, location.href).pathname.match(IG_POST); return m && m[1] !== 'audio' ? m[1] : ''; } catch (e) { return ''; }
+  };
+  const IG_RESERVED = /^(explore|accounts|stories|direct|reels?|p|tv|about|legal|developer|web|emails|challenge|your_activity|settings)$/;
+  function igUser(root) {
+    for (const a of root.querySelectorAll('a[href]')) {
+      const m = (a.getAttribute('href') || '').match(/^(?:https:\/\/www\.instagram\.com)?\/([A-Za-z0-9_.]+)\/?$/);
+      if (m && !IG_RESERVED.test(m[1])) return m[1];
+    }
+    return '';
+  }
+  function igCaption() {
+    // og:title 예) Instagram의 계정님 : "캡션…" / 계정 on Instagram: "caption…" → 캡션 첫 줄
+    const og = (document.querySelector('meta[property="og:title"]') || {}).content || '';
+    const m = og.match(/:\s*["“]([^\n"”]+)/);
+    return m ? text(m[1]) : '';
+  }
+  function instagramCandidates() {
+    if (!/(^|\.)instagram\.com$/.test(location.hostname)) return [];
+    const vids = [...document.querySelectorAll('video')].map((v) => ({ v, r: v.getBoundingClientRect() })).filter(({ r }) => r.width >= 40 && r.height >= 40);
+    if (!vids.length) return [];
+    const seen = new Map();   // 코드 → 영상
+    const pageCode = igCode(location.href);
+    if (pageCode) {
+      const shown = ({ r }) => Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+      const main = vids.reduce((a, b) => (shown(b) > shown(a) ? b : a));
+      if (shown(main) > 0) seen.set(pageCode, main);
+    }
+    for (const it of vids) {
+      if ([...seen.values()].includes(it)) continue;
+      let code = '';
+      for (let el = it.v.parentElement, i = 0; el && el !== document.body && i < 25; el = el.parentElement, i++) {
+        const codes = new Set([...el.querySelectorAll('a[href]')].map((a) => igCode(a.href)).filter(Boolean));
+        if (codes.size === 1) code = [...codes][0];
+        if (codes.size) break;
+      }
+      if (code && !seen.has(code)) seen.set(code, it);
+    }
+    const ogUrl = (document.querySelector('meta[property="og:url"]') || {}).content || '';
+    const out = [];
+    for (const [code, { v, r }] of seen) {
+      // 영상이 그 게시물 링크 안에 있으면(프로필 격자의 미리보기 등) 링크가 이미 후보다
+      const wrap = v.closest('a[href]');
+      if (wrap && igCode(wrap.href) === code) continue;
+      const box = v.closest('article') || v.parentElement;
+      let user = box ? igUser(box) : '';
+      if (!user && code === pageCode) { const m = ogUrl.match(/instagram\.com\/([A-Za-z0-9_.]+)\/(?:p|reels?|tv)\//); if (m) user = m[1]; }
+      const own = code === pageCode && igCode(ogUrl) === code;   // og 정보가 이 게시물 것인가 (SPA 로 넘어가면 예전 게시물 것일 수 있다)
+      const cap = own ? igCaption() : '';
+      const a = document.createElement('a');
+      a.href = 'https://www.instagram.com/reel/' + code + '/';
+      a.setAttribute('title', cap || (user ? '@' + user + ' 인스타그램 영상' : '인스타그램 영상'));
+      const poster = v.poster || (own ? (document.querySelector('meta[property="og:image"]') || {}).content : '');
+      if (poster) { const im = document.createElement('img'); im.src = poster; a.appendChild(im); }
       out.push({ a, el: v, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
     }
     return out;
@@ -573,6 +638,7 @@
     const vurl = currentVideoUrl(), pel = vurl && playerEl();
     if (pel) targets.push([pel, vurl]); // the player stands for the video being watched
     for (const c of tiktokCandidates()) targets.push([c.el, c.a.href]); // 틱톡 영상 요소
+    for (const c of instagramCandidates()) targets.push([c.el, c.a.href]); // 인스타그램 영상 요소
     for (const [a, href] of targets) {
       const k = keyOf(href);
       if (!keys.has(k)) continue;
@@ -798,7 +864,7 @@
     }
     if (rule.action === 'download') {
       const vids = links.filter(dlOk);
-      if (!vids.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리 게시물 링크만 받을 수 있어요' }); return; }
+      if (!vids.length) { if (!offKeys.size) toast({ tone: '#98A2B3', error: true, title: '선택한 영역에 영상 링크가 없어요', sub: '유튜브·틱톡·비메오·빌리빌리·인스타그램 게시물 링크만 받을 수 있어요' }); return; }
       // 우클릭 드래그는 다운로드 창만 다룬다. 사이드바 목록에는 목록창의 [목록에 추가] 를 눌러야 들어간다
       markUrls(new Set(vids.map((l) => keyOf(l.url))), rule.color || '#C83F55', 'dl');
       openDlPanel(vids, rule.color || '#C83F55');

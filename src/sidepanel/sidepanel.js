@@ -651,7 +651,7 @@ async function dlPoll() {
 async function downloadItems(items) {
   const targets = items.filter(isDownloadable);
   const skipped = items.length - targets.length;
-  if (!targets.length) { toast('다운로드할 영상 링크가 없어요 (유튜브·틱톡·비메오·빌리빌리 게시물)', 'error'); return; }
+  if (!targets.length) { toast('다운로드할 영상 링크가 없어요 (유튜브·틱톡·비메오·빌리빌리·인스타그램 게시물)', 'error'); return; }
   const dl = settings.dl || {};
   const modeLabel = { both: '영상+음성', video: '영상만', audio: '음성만' }[dl.mode] || '영상+음성';
   const lines = [`저장 위치: ${dl.saveDir || '서버 기본 폴더'}`, `${modeLabel}${dl.quality ? ` · 최대 ${dl.quality}p` : ' · 최고 화질'}`];

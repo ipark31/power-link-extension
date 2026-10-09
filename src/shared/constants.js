@@ -110,7 +110,12 @@ export const DEFAULT_SETTINGS = {
 export const DL_HOSTS = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|vimeo\.com|bilibili\.com|instagram\.com)$/i;
 export function isDownloadable(it) {
   if (!it || it.kind === 'account') return false;
-  try { return DL_HOSTS.test(new URL(it.url).hostname); } catch (e) { return false; }
+  try {
+    const host = new URL(it.url).hostname;
+    // 인스타그램은 게시물(/p/, /reel/, /tv/)만 — 가입·로그인 안내 같은 다른 인스타 링크는 영상이 아니다
+    if (/(^|\.)instagram\.com$/i.test(host)) return !!(it.ids && it.ids.postId);
+    return DL_HOSTS.test(host);
+  } catch (e) { return false; }
 }
 
 export const STORAGE = {
