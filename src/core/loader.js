@@ -25,6 +25,8 @@
     requested = true;
     try { chrome.runtime.sendMessage({ type: 'pl:loadEngine' }, () => { if (chrome.runtime.lastError) requested = false; }); } catch (e) { requested = false; }
   }
+  // 16:9 버튼으로 쇼츠를 롱폼 화면으로 다시 연 직후: 넘겨받은 다운로드 창을 바로 띄우도록 엔진을 지금 불러온다
+  try { if (sessionStorage.getItem('pl_dlp_carry')) load(); } catch (e) { /* storage blocked */ }
   // warm up while the modifier is held, before the mouse goes down
   addEventListener('keydown', (e) => { const m = KEY_MOD[e.key]; if (m && active().some((r) => r.mod === m)) load(); }, true);
   // A rule without a modifier key gives no warning before the press: the engine would be requested at mousedown and could
