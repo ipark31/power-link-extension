@@ -1163,13 +1163,22 @@
     dlRefresh();
   }
 
-  // ---- 16:9: 유튜브 쇼츠(/shorts/ID)를 같은 영상의 롱폼 화면(/watch?v=ID)으로 다시 연다
-  const shortsId = () => (/(^|\.)youtube\.com$/i.test(location.hostname) && (location.pathname.match(/^\/shorts\/([A-Za-z0-9_-]{6,})/) || [])[1]) || '';
+  // ---- 16:9: 유튜브 쇼츠(/shorts/ID)를 같은 영상의 롱폼 화면(/watch?v=ID)으로 연다 (유튜브 페이지에서만)
+  //   대상: 지금 보는 쇼츠, 아니면(홈·검색·롱폼 화면) 다운로드 창에서 체크한 첫 쇼츠. 대상이 없으면(롱폼만 담김) 버튼을 숨긴다
+  const onYouTube = () => /(^|\.)youtube\.com$/i.test(location.hostname);
+  const shortsIdOf = (u) => { try { const x = new URL(u, location.href); return /(^|\.)youtube\.com$/i.test(x.hostname) ? ((x.pathname.match(/^\/shorts\/([A-Za-z0-9_-]{6,})/) || [])[1] || '') : ''; } catch (e) { return ''; } };
+  function shortsTarget() {
+    if (!onYouTube()) return '';
+    const here = shortsIdOf(location.href);
+    if (here) return here;
+    for (const it of dlp ? dlp.items.values() : []) { const id = dlChecked(it) && shortsIdOf(it.link.url); if (id) return id; }
+    return '';
+  }
   function dlHeader() {
-    if (dlp) dlp.el.querySelector('.r169').style.display = shortsId() ? '' : 'none';   // 롱폼·다른 사이트에서는 숨긴다
+    if (dlp) dlp.el.querySelector('.r169').style.display = shortsTarget() ? '' : 'none';
   }
   function toLongForm() {
-    const id = shortsId();
+    const id = shortsTarget();
     if (!id) return;
     dlCarry();
     location.assign(location.origin + '/watch?v=' + encodeURIComponent(id));

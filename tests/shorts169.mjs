@@ -1,7 +1,8 @@
 // 다운로드 창 머리말 검증: 16:9(유튜브 쇼츠 → 롱폼 화면) · 주소 복사 · [목록 추가]. 실행: node tests/shorts169.mjs
 // 유튜브 페이지는 가짜(route). 다운로드 창은 닫힌 shadow root 라 CDP(DOM.getDocument pierce)로 버튼 위치·상태를 읽는다.
-//   16:9 : 쇼츠 페이지(/shorts/ID)에서만 보인다. 누르면 같은 영상의 /watch?v=ID 로 다시 열리고, 다운로드 창(영상·체크)이 이어서 뜬다
-//          유튜브가 페이지를 다시 읽지 않고 화면을 바꿔도(history) 따라 보이고 숨는다. 유튜브가 아닌 사이트에서는 없다
+//   16:9 : 유튜브 페이지에서 지금 보는 쇼츠(/shorts/ID)나 다운로드 창에 체크한 쇼츠가 있으면 보인다.
+//          누르면 그 쇼츠(지금 보는 것 우선, 없으면 체크한 첫 쇼츠)를 /watch?v=ID 로 열고, 다운로드 창(영상·체크)이 이어서 뜬다
+//          롱폼만 담겼거나 유튜브가 아닌 사이트에서는 없다. 유튜브가 화면만 바꿔도(history) 따라 보이고 숨는다
 //   주소 복사 : 체크한 영상 주소가 한 줄에 하나씩 클립보드로. 배지 숫자 = 체크한 수
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,8 @@ const CARDS = ['AAAAAAAAAA1', 'BBBBBBBBBB2', 'CCCCCCCCCC3'];
 const cardUrl = (id) => 'https://www.youtube.com/shorts/' + id;
 // 쇼츠 카드 3개 (가로로 나란히). 같은 화면을 쇼츠·홈·다른 사이트 주소에서 보여 준다
 const CARDS_HTML = `<div style="display:flex;gap:20px;padding:40px">${CARDS.map((id, i) => `<div style="width:200px"><a href="${cardUrl(id)}" style="display:block;height:160px;background:#ccc"></a><a href="${cardUrl(id)}" style="display:block;padding:6px 0">쇼츠 ${i + 1}</a></div>`).join('')}</div>`;
+const LONGS = ['LLLLLLLLLL1', 'LLLLLLLLLL2'];
+const LONGS_HTML = `<div style="display:flex;gap:20px;padding:40px">${LONGS.map((id, i) => `<div style="width:200px"><a href="https://www.youtube.com/watch?v=${id}" style="display:block;height:160px;background:#ccc"></a><a href="https://www.youtube.com/watch?v=${id}" style="display:block;padding:6px 0">롱폼 ${i + 1}</a></div>`).join('')}</div>`;
 const page_ = (title, body) => `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="margin:0;font-family:sans-serif">${body}</body>`;
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'pl-169-'));
@@ -33,7 +36,8 @@ try {
   });
   await ctx.route(/^https:\/\/www\.(youtube|example)\.com\//, (route) => {
     const u = new URL(route.request().url());
-    const body = u.pathname === '/watch' ? page_('watch', `<h1 style="padding:40px">롱폼 화면 ${u.searchParams.get('v')}</h1>`) : page_('cards', CARDS_HTML);
+    const body = u.pathname === '/watch' ? page_('watch', `<h1 style="padding:40px">롱폼 화면 ${u.searchParams.get('v')}</h1>`)
+      : u.pathname === '/results' ? page_('longs', LONGS_HTML) : page_('cards', CARDS_HTML);
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
   });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.youtube.com' });
@@ -88,26 +92,42 @@ try {
   ok('주소 복사 → 체크한 주소 2개가 한 줄에 하나씩', clip === want, JSON.stringify(clip));
   ok('복사하면 체크 표시 + 안내 "주소 2개를 복사했어요"', (await prop('.dlp-h .cp', 'this.classList.contains("done")')) && (await prop('.dlp-acts .n', 'this.textContent')) === '주소 2개를 복사했어요', await prop('.dlp-acts .n', 'this.textContent'));
 
-  // ---- 3) 16:9 → 롱폼 화면, 다운로드 창이 이어서 뜬다
+  // ---- 3) 쇼츠 페이지에서 16:9 → 지금 보는 쇼츠의 롱폼 화면, 다운로드 창이 이어서 뜬다
   await click('.dlp-h .r169');
-  ok('16:9 클릭 → /watch?v=같은 영상 으로 다시 열림', await until(() => page.url() === 'https://www.youtube.com/watch?v=' + SHORT), page.url());
+  ok('16:9 클릭 → 지금 보는 쇼츠의 /watch?v= 로 열림', await until(() => page.url() === 'https://www.youtube.com/watch?v=' + SHORT), page.url());
   ok('새 페이지에도 다운로드 창이 이어서 뜸 (영상 3개)', await until(async () => (await all('.dlp-row')).length === 3, 10000), String((await all('.dlp-row')).length));
   const checks = [];
   for (const i of [0, 1, 2]) checks.push(await prop('.dlp-row input', 'this.checked', i));   // CDP 노드 번호가 엇갈리지 않게 차례로
   ok('체크 상태도 그대로 (두 번째만 빠짐)', JSON.stringify(checks) === '[true,false,true]', JSON.stringify(checks));
-  ok('롱폼 화면에서는 16:9 가 없다', await until(async () => !(await shown169())));
   ok('넘겨준 저장소 값은 지워짐', (await page.evaluate(() => sessionStorage.getItem('pl_dlp_carry'))) === null);
 
-  // ---- 4) 유튜브가 페이지를 다시 읽지 않고 화면을 바꿀 때 (history)
+  // ---- 4) 롱폼 화면: 창에 체크한 쇼츠가 있으면 보이고, 쇼츠 체크를 모두 풀면 숨는다
+  ok('롱폼 화면이라도 창에 체크한 쇼츠가 있으면 16:9 가 보임', await until(shown169));
+  await click('.dlp-row:nth-child(1) input'); await click('.dlp-row:nth-child(3) input'); await wait(300);
+  ok('쇼츠 체크를 모두 풀면 숨음', await until(async () => !(await shown169()), 4000));
+  // 유튜브가 페이지를 다시 읽지 않고 화면만 바꿀 때 (history)
   await page.evaluate((id) => history.pushState({}, '', '/shorts/' + id), CARDS[1]);
-  ok('화면만 쇼츠로 바뀌어도 16:9 가 나타남', await until(shown169, 4000));
+  ok('화면만 쇼츠로 바뀌면 (체크 없어도) 16:9 가 나타남', await until(shown169, 4000));
   await page.evaluate(() => history.pushState({}, '', '/'));
-  ok('홈 화면으로 바뀌면 다시 숨음', await until(async () => !(await shown169()), 4000));
+  ok('홈 화면으로 바뀌면 (체크한 쇼츠 없음) 다시 숨음', await until(async () => !(await shown169()), 4000));
 
-  // ---- 5) 유튜브가 아닌 사이트의 /shorts/ 주소에서는 없다
+  // ---- 5) 홈 화면: 체크한 첫 쇼츠를 롱폼으로
+  await click('.dlp-row:nth-child(3) input'); await wait(300);
+  ok('홈 화면에서 쇼츠를 체크하면 16:9 가 보임', await until(shown169, 4000));
+  await click('.dlp-h .r169');
+  ok('16:9 클릭 → 체크한 쇼츠(3번째)의 /watch?v= 로 열림', await until(() => page.url() === 'https://www.youtube.com/watch?v=' + CARDS[2]), page.url());
+  ok('다운로드 창이 이어서 뜸', await until(async () => (await all('.dlp-row')).length === 3, 10000));
+
+  // ---- 6) 롱폼만 담으면 없다
+  await page.goto('https://www.youtube.com/results'); await wait(800);
+  await drag();
+  ok('롱폼 카드 드래그 → 다운로드 창에 롱폼 2개', await until(async () => (await all('.dlp-row')).length === 2), String((await all('.dlp-row')).length));
+  ok('롱폼만 있으면 16:9 는 없다', !(await shown169()));
+
+  // ---- 7) 유튜브가 아닌 사이트에서는 없다 (쇼츠 링크를 담아도)
   await page.goto('https://www.example.com/shorts/' + SHORT); await wait(800);
   await drag();
-  ok('다른 사이트: 다운로드 창은 뜨고', await until(async () => (await all('.dlp-row')).length === 3), String((await all('.dlp-row')).length));
+  ok('다른 사이트: 쇼츠 링크 3개가 다운로드 창에 뜨고', await until(async () => (await all('.dlp-row')).length === 3), String((await all('.dlp-row')).length));
   ok('다른 사이트: 16:9 는 없다', !(await shown169()));
 } catch (e) {
   R.push('FAIL  예외 ' + (e.stack || e));
