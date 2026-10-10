@@ -17,10 +17,10 @@ const URL_ = process.env.ALIGN_URL || '';
 const R = [];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const row = (title, cls, status, pct) => `<div class="dlp-row"><input type="checkbox" checked><span class="dlp-th"></span><span class="dlp-b"><div class="dlp-t">${title}</div><div class="dlp-line"><div class="dlp-pb ${cls}"><span style="width:${pct}%"></span></div><div class="dlp-m ${status[0]}">${status[1]}</div></div></span></div>`;
+const row = (title, cls, status, pct, sh) => `<div class="dlp-row${sh ? ' sh' : ''}"><input type="checkbox" checked><span class="dlp-th"></span><span class="dlp-b"><div class="dlp-t">${title}</div><div class="dlp-line"><div class="dlp-pb ${cls}"><span style="width:${pct}%"></span></div><div class="dlp-m ${status[0]}">${status[1]}</div></div></span>${sh ? '<button type="button" class="r169"><span>16:9</span></button>' : ''}</div>`;
 const MARKUP = `
-<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="r169"><span>16:9</span></button><span class="sp"></span><button type="button" class="cp"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"></rect><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"></path></svg><svg class="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg><b>7</b></button><button type="button" class="lst"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
-  <div class="dlp-list">${row('왕초보 유튜버가 4000시간을 넘기는 현실적인 방법 (유튜브 8000시간)', 'idle', ['host', 'youtube.com'], 0)}${row('짧은 제목', '', ['run', '42%'], 42)}${row('합치는 영상', '', ['run', '합치는 중'], 100)}${row('끝난 영상', 'ok', ['ok', '완료'], 100)}</div>
+<div class="dlp" id="p1" style="--tone:#C83F55"><div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><span class="sp"></span><button type="button" class="cp"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"></rect><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"></path></svg><svg class="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg><b>7</b></button><button type="button" class="lst"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+  <div class="dlp-list">${row('왕초보 유튜버가 4000시간을 넘기는 현실적인 방법 (유튜브 8000시간)', 'idle', ['host', 'youtube.com'], 0, true)}${row('짧은 제목', '', ['run', '42%'], 42)}${row('합치는 영상', '', ['run', '합치는 중'], 100)}${row('끝난 영상', 'ok', ['ok', '완료'], 100)}</div>
   <div class="dlp-f"><div class="dlp-bar on"><span style="width:40%"></span></div>
   <div class="dlp-acts"><span class="n">7개 중 7개 선택</span><span class="dlp-btns"><button type="button" class="add">목록 추가</button><button type="button" class="del">선택 삭제 7</button><button type="button" class="pri">다운로드 7개</button></span></div></div></div>
 <div class="dlp" id="p2" style="--tone:#C83F55"><div class="dlp-f"><div class="dlp-acts"><span class="n">다운로드 중 40% · 완료 2/7</span><span class="dlp-btns"><button type="button" class="add" disabled>목록 추가</button><button type="button" class="del" disabled>선택 삭제</button><button type="button" class="stop">다운로드 중지</button></span></div></div></div>
@@ -109,8 +109,6 @@ try {
   check('목록창 목록 보기 안 그림', (await ink('#p1 .dlp-h .lst')).cy - mid(await boxOf('#p1 .dlp-h .lst')));
   check('목록창 설정(톱니바퀴) ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .cfg')) - hic);
   check('목록창 설정(톱니바퀴) 안 그림', (await ink('#p1 .dlp-h .cfg')).cy - mid(await boxOf('#p1 .dlp-h .cfg')));
-  check('목록창 16:9 ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .r169')) - hic);
-  check('목록창 16:9 글자가 상자 가운데', (await ink('#p1 .dlp-h .r169 span')).cy - mid(await boxOf('#p1 .dlp-h .r169')));
   check('목록창 주소 복사 ↔ 아이콘', mid(await boxOf('#p1 .dlp-h .cp')) - hic);
   check('목록창 주소 복사 안 그림', (await ink('#p1 .dlp-h .cp .ico', 3)).cy - mid(await boxOf('#p1 .dlp-h .cp')));
   check('목록창 주소 복사 배지 숫자', (await ink('#p1 .dlp-h .cp b', 1)).cy - mid(await boxOf('#p1 .dlp-h .cp b')));
@@ -125,6 +123,12 @@ try {
     check(`목록 ${i}번째 줄 체크박스 ↔ 썸네일`, mid(await boxOf(r + ' input')) - mid(await boxOf(r + ' .dlp-th')));
     if (i > 1) check(`목록 ${i}번째 줄 상태 글자 ↔ 진행 막대`, (await ink(r + ' .dlp-m')).cy - mid(await boxOf(r + ' .dlp-pb')));
   }
+  // 쇼츠 행 오른쪽 16:9: 썸네일과 같은 높이, 글자는 상자 가운데, 제목이 버튼과 겹치지 않음
+  check('목록 1번째 줄(쇼츠) 16:9 ↔ 썸네일', mid(await boxOf('#p1 .dlp-row:nth-child(1) .r169')) - mid(await boxOf('#p1 .dlp-row:nth-child(1) .dlp-th')));
+  check('목록 1번째 줄(쇼츠) 16:9 글자가 상자 가운데', (await ink('#p1 .dlp-row:nth-child(1) .r169 span')).cy - mid(await boxOf('#p1 .dlp-row:nth-child(1) .r169')));
+  { const t = await boxOf('#p1 .dlp-row:nth-child(1) .dlp-b'), b = await boxOf('#p1 .dlp-row:nth-child(1) .r169'), rw = await boxOf('#p1 .dlp-row:nth-child(1)');
+    const gap = b.x - (t.x + t.width), out = (b.x + b.width) - (rw.x + rw.width);
+    R.push(`${gap >= 6 && out <= 0 ? 'PASS' : 'FAIL'}  쇼츠 행: 제목과 16:9 사이 ${gap.toFixed(1)}px, 행 밖으로 ${out.toFixed(1)}px`); }
   // 5) 알림: 아이콘 ↔ 제목 첫 줄
   check('알림 아이콘 ↔ 제목', (await ink('#t1 .tt')).cy - mid(await boxOf('#t1 .ic')));
   check('오류 알림 아이콘 ↔ 제목', (await ink('#t2 .tt')).cy - mid(await boxOf('#t2 .ic')));

@@ -110,9 +110,6 @@
     .dlp-h .ic { background: var(--tone, #C83F55); margin-top: 0; }
     .dlp-h .tt { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
     .dlp-h .sp { flex: 1; }
-    /* 16:9 — 유튜브 쇼츠 페이지에서만: 그 쇼츠를 롱폼(/watch) 화면으로 다시 연다. 화면 비율 아이콘처럼 작게 */
-    .dlp-h .r169 { height: 18px; padding: 0 4px; margin-left: 2px; border-radius: 4px; border: 1.5px solid currentColor; background: none; color: var(--muted); font-size: 10px; line-height: 10px; font-weight: 700; letter-spacing: .02em; }
-    .dlp-h .r169:hover { color: var(--tone, #C83F55); }
     .dlp-h .x, .dlp-h .cfg, .dlp-h .lst, .dlp-h .cp { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: none; color: var(--muted); display: grid; place-items: center; }
     .dlp-h .x:hover, .dlp-h .cfg:hover, .dlp-h .lst:hover, .dlp-h .cp:hover { background: var(--chip); color: var(--text); }
     .dlp-h .x:disabled, .dlp-h .cfg:disabled, .dlp-h .cp:disabled { opacity: .3; cursor: not-allowed; background: none; }
@@ -131,6 +128,11 @@
     .dlp-h .cfg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
     .dlp-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
     .dlp-row { display: grid; grid-template-columns: 18px 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+    /* 16:9 — 유튜브 쇼츠 행의 오른쪽: 그 쇼츠를 롱폼(/watch) 화면으로 연다. 화면 비율 아이콘처럼 작게 */
+    .dlp-row.sh { grid-template-columns: 18px 56px minmax(0, 1fr) auto; }
+    .dlp-row .r169 { height: 18px; padding: 0 4px 2px; border-radius: 4px; border: 1.5px solid currentColor; background: none; color: var(--muted); font-size: 10px; line-height: 10px; font-weight: 700; letter-spacing: .02em; }
+    .dlp-row .r169 span { line-height: 10px; }   /* 공통 * 의 line-height(16px) 를 따르면 상자보다 커서 글자가 위로 밀린다 */
+    .dlp-row .r169:hover { color: var(--tone, #C83F55); }
     .dlp-row > .dlp-b { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .dlp-row.lock { cursor: default; }
     .dlp-row input:disabled { cursor: default; opacity: .55; }
@@ -935,6 +937,16 @@
     const row = document.createElement('label');
     row.className = 'dlp-row';
     row.innerHTML = `<input type="checkbox" checked><span class="dlp-th" style="${link.thumb ? `background-image:url(&quot;${escH(link.thumb)}&quot;)` : ''}"></span><span class="dlp-b"><div class="dlp-t">${escH(link.title || link.url)}</div><div class="dlp-line"><div class="dlp-pb idle"><span></span></div><div class="dlp-m host">${escH((link.domain || '').replace(/^www\./, ''))}</div></div></span>`;
+    // 유튜브 쇼츠 행: 오른쪽 16:9 → 그 쇼츠를 롱폼 화면으로
+    const sid = shortsIdOf(link.url);
+    if (sid) {
+      row.classList.add('sh');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'r169'; b.title = b.ariaLabel = '쇼츠 영상을 롱폼 영상으로 보기';
+      b.innerHTML = '<span>16:9</span>';
+      b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toLongForm(sid); });   // 행(label)의 체크는 바꾸지 않는다
+      row.appendChild(b);
+    }
     return row;
   }
   const dlChecked = (it) => it.row.querySelector('input').checked;
@@ -1003,7 +1015,6 @@
     cp.disabled = !checked.length;
     cp.querySelector('b').textContent = checked.length ? String(checked.length) : '';
     cp.title = checked.length ? `체크한 영상 주소 ${checked.length}개 복사 (한 줄에 하나씩)` : '복사할 영상을 체크하세요';
-    dlHeader();
     // 받는 중에는 창을 닫을 수 없다 (닫으면 진행 상황과 중지 버튼이 사라진다)
     const x = q('.x'); x.disabled = busy; x.title = busy ? '받는 중에는 닫을 수 없어요. 멈추려면 다운로드 중지를 누르세요' : '';
   }
@@ -1014,7 +1025,7 @@
       const el = document.createElement('div');
       el.className = 'dlp';
       el.style.setProperty('--tone', tone || '#C83F55');
-      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><button type="button" class="r169" aria-label="쇼츠 영상을 롱폼 영상으로 보기" title="쇼츠 영상을 롱폼 영상으로 보기" style="display:none"><span>16:9</span></button><span class="sp"></span><button type="button" class="cp" aria-label="주소 복사"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"></rect><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"></path></svg><svg class="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg><b></b></button><button type="button" class="lst" aria-label="목록 보기" title="수집 링크 목록 보기 (사이드바 열기)"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+      el.innerHTML = `<div class="dlp-h"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"></path></svg></span><div class="tt">영상 다운로드</div><span class="sp"></span><button type="button" class="cp" aria-label="주소 복사"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"></rect><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"></path></svg><svg class="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg><b></b></button><button type="button" class="lst" aria-label="목록 보기" title="수집 링크 목록 보기 (사이드바 열기)"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><button type="button" class="cfg" aria-label="설정" title="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"></circle><circle cx="12" cy="12" r="6.4"></circle><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3M5.35 5.35l2.12 2.12M16.53 16.53l2.12 2.12M5.35 18.65l2.12-2.12M16.53 7.47l2.12-2.12"></path></svg></button><button type="button" class="x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
         <div class="dlp-list"></div>
         <div class="dlp-f"><div class="dlp-bar"><span></span></div>
           <div class="dlp-acts"><span class="n"></span><span class="dlp-btns"><button type="button" class="add" title="체크한 영상을 수집 링크 목록에 저장해요">목록 추가</button><button type="button" class="del" title="체크한 항목을 목록에서 빼요">선택 삭제</button><button type="button" class="stop" title="받는 중인 다운로드를 모두 중지하고 서버의 받던 파일을 지워요">다운로드 중지</button><button type="button" class="pri">다운로드</button></span></div></div>`;
@@ -1023,7 +1034,6 @@
       el.querySelector('.lst').addEventListener('click', () => send({ type: 'pl:openSidePanel' })); // 보기만 하므로 받는 중에도 쓸 수 있다
       el.querySelector('.add').addEventListener('click', addToList);
       el.querySelector('.cp').addEventListener('click', copyUrls);   // 보기만 하므로 받는 중에도 쓸 수 있다
-      el.querySelector('.r169').addEventListener('click', toLongForm);
       el.querySelector('.pri').addEventListener('click', startDl);
       el.querySelector('.del').addEventListener('click', deleteChecked);
       el.querySelector('.stop').addEventListener('click', stopAll);
@@ -1035,7 +1045,6 @@
       // 목록에 있으면 외곽선도 있어야 한다: 화면이 바뀌거나(유튜브의 페이지 전환) 카드가 뒤늦게 그려져 외곽선이 없는 영상을 다시 표시한다
       dlp.markTimer = setInterval(() => {
         if (!dlp) return;
-        dlHeader();   // 유튜브는 페이지를 다시 읽지 않고 화면을 바꾼다 (쇼츠 ↔ 다른 화면): 16:9 버튼을 따라 맞춘다
         const missing = [...dlp.items.keys()].filter((k) => { const m = marks.get(k); return !m || !m.groups.has('dl') || marksHref !== location.href; });
         if (missing.length) markUrls(new Set(missing), dlp.tone || '#C83F55', 'dl');
       }, 1500);
@@ -1163,23 +1172,13 @@
     dlRefresh();
   }
 
-  // ---- 16:9: 유튜브 쇼츠(/shorts/ID)를 같은 영상의 롱폼 화면(/watch?v=ID)으로 연다 (유튜브 페이지에서만)
-  //   대상: 지금 보는 쇼츠, 아니면(홈·검색·롱폼 화면) 다운로드 창에서 체크한 첫 쇼츠. 대상이 없으면(롱폼만 담김) 버튼을 숨긴다
+  // ---- 16:9: 다운로드 창의 유튜브 쇼츠 행(/shorts/ID)을 같은 영상의 롱폼 화면(/watch?v=ID)으로 연다
+  //   유튜브 페이지면 지금 탭을 바꾸고 다운로드 창을 이어서 띄운다. 다른 사이트면 그 페이지를 두고 새 탭으로 연다
   const onYouTube = () => /(^|\.)youtube\.com$/i.test(location.hostname);
   const shortsIdOf = (u) => { try { const x = new URL(u, location.href); return /(^|\.)youtube\.com$/i.test(x.hostname) ? ((x.pathname.match(/^\/shorts\/([A-Za-z0-9_-]{6,})/) || [])[1] || '') : ''; } catch (e) { return ''; } };
-  function shortsTarget() {
-    if (!onYouTube()) return '';
-    const here = shortsIdOf(location.href);
-    if (here) return here;
-    for (const it of dlp ? dlp.items.values() : []) { const id = dlChecked(it) && shortsIdOf(it.link.url); if (id) return id; }
-    return '';
-  }
-  function dlHeader() {
-    if (dlp) dlp.el.querySelector('.r169').style.display = shortsTarget() ? '' : 'none';
-  }
-  function toLongForm() {
-    const id = shortsTarget();
+  function toLongForm(id) {
     if (!id) return;
+    if (!onYouTube()) { window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(id), '_blank', 'noopener'); return; }
     dlCarry();
     location.assign(location.origin + '/watch?v=' + encodeURIComponent(id));
   }
